@@ -221,6 +221,32 @@ def test_full_dates_are_supported():
     assert prob.n_steps == 50
 
 
+def test_utc_offsets_are_converted_to_one_clock():
+    # the same hour written in two time zones is the same hour
+    fleet = make_fleet([
+        van(1, arrival="2026-03-02T18:00Z", departure="2026-03-02T19:00Z"),
+        van(2, arrival="2026-03-02T20:00+02:00", departure="2026-03-02T21:00+02:00"),
+    ])
+    del fleet["start"]
+    prob = build_problem(parse_fleet(fleet))
+    assert prob.labels[0] == "2026-03-02 18:00"
+    assert [(s.a, s.d) for v in prob.vehicles for s in v.stops] == [(0, 4), (0, 4)]
+    assert any("different UTC offsets" in n for n in prob.notes)
+
+
+def test_daylight_saving_change_gives_the_real_parked_time():
+    # 00:00 at UTC-8 to 04:00 at UTC-7 is 3 hours, not 4
+    fleet = make_fleet([van(1, max_kw=10, arrival_soc_pct=0, required_soc_pct=100,
+                            arrival="2026-03-08T00:00-08:00", departure="2026-03-08T04:00-07:00")])
+    del fleet["start"]
+    prob = build_problem(parse_fleet(fleet))
+    stop = prob.vehicles[0].stops[0]
+    assert stop.d - stop.a == 12  # 15-minute steps
+    r = plan(fleet)
+    assert r.vehicles[0].stops[0].departure_kwh == pytest.approx(30, abs=0.01)
+    assert not r.all_ready
+
+
 def test_hours_too_short_is_explained():
     fleet = make_fleet([van(1)])
     fleet["hours"] = 6

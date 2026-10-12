@@ -92,7 +92,7 @@ vehicles:
 | `max_kw` | fastest charging power the vehicle accepts |
 | `arrival_soc_pct` | battery level when it arrives, in percent |
 | `required_soc_pct` | battery level it needs when it leaves |
-| `arrival`, `departure` | `HH:MM`, or a full date and time like `2026-03-02T06:30` |
+| `arrival`, `departure` | `HH:MM`, or a full date and time like `2026-03-02T06:30`. A UTC offset (`2026-03-02T06:30+01:00`) is allowed; times with different offsets are converted to one clock. |
 | `stops` | instead of one arrival and departure: a list of stops, each with `arrival`, `departure`, `required_soc_pct` and `trip_kwh` (energy used on the road since the last stop). See `examples/school-buses.yaml`. |
 | `power_limit_kw`, `other_load_kw`, `energy_price_per_kwh` | one number, a list of 24 hourly values, or periods `{from, to, value}` (`price` or `kw` also work as the value name) |
 | `billing_days` | a one-day plan carries 1/30 of the monthly demand charge by default. Set it to 1 to count the full charge. |

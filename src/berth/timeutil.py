@@ -26,7 +26,8 @@ def parse_time(text: str) -> int | datetime:
     """Parse a vehicle time.
 
     Returns minutes after midnight (int) for "HH:MM", or a datetime for a full
-    date and time.
+    date and time. A UTC offset (like +02:00 or Z) is kept; build_problem
+    converts all times to one clock.
     """
     text = str(text).strip()
     if CLOCK_RE.match(text):
@@ -35,8 +36,6 @@ def parse_time(text: str) -> int | datetime:
         value = datetime.fromisoformat(text)
     except ValueError:
         raise ValueError(f"'{text}' is not a valid time. {TIME_HELP}") from None
-    if value.tzinfo is not None:
-        value = value.replace(tzinfo=None)
     return value
 
 

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import numpy as np
 
@@ -136,19 +136,46 @@ def build_problem(fleet: Fleet) -> Problem:
     errors: list[str] = []
     notes: list[str] = []
 
+    # ---- time zones ------------------------------------------------------------
+    # A full date and time may carry a UTC offset (like +02:00 or Z). Berth
+    # plans on one clock: the offset of the plan start, or else of the first
+    # time that has one. Times with another offset are converted to it, so
+    # the time each vehicle is parked is right; times without an offset are
+    # read on that clock.
+    texts = [fleet.start] if fleet.start is not None else []
+    texts += [t for veh in fleet.vehicles for st in veh.all_stops() for t in (st.arrival, st.departure)]
+    offsets: list[timedelta] = []
+    for text in texts:
+        p = parse_time(text)
+        if isinstance(p, datetime) and p.tzinfo is not None and p.utcoffset() not in offsets:
+            offsets.append(p.utcoffset())
+    plan_tz = timezone(offsets[0]) if offsets else None
+    if len(offsets) > 1:
+        notes.append(
+            f"The times use different UTC offsets ({', '.join(_offset_text(o) for o in offsets)}), for example "
+            f"across a daylight-saving change. Berth converted them to {_offset_text(offsets[0])} so the time "
+            "each vehicle is parked is right. Prices and limits by time of day follow that clock."
+        )
+
+    def ptime(text: str) -> int | datetime:
+        p = parse_time(text)
+        if isinstance(p, datetime) and p.tzinfo is not None:
+            p = p.astimezone(plan_tz).replace(tzinfo=None)
+        return p
+
     # ---- work out the plan start ------------------------------------------
     parsed_first = []
     any_abs = False
     for veh in fleet.vehicles:
         for st in veh.all_stops():
             for t in (st.arrival, st.departure):
-                if isinstance(parse_time(t), datetime):
+                if isinstance(ptime(t), datetime):
                     any_abs = True
-        parsed_first.append(parse_time(veh.all_stops()[0].arrival))
+        parsed_first.append(ptime(veh.all_stops()[0].arrival))
 
     start_dt: datetime | None = None
     if fleet.start is not None:
-        s = parse_time(fleet.start)
+        s = ptime(fleet.start)
         if isinstance(s, datetime):
             start_dt = s
             start_clock = s.hour * 60 + s.minute
@@ -183,7 +210,7 @@ def build_problem(fleet: Fleet) -> Problem:
         return clock_label(total) + (f" +{day}d" if day > 0 else "")
 
     def resolve(text: str, not_before: float) -> float:
-        p = parse_time(text)
+        p = ptime(text)
         if isinstance(p, datetime):
             return (p - start_dt).total_seconds() / 60.0  # type: ignore[operator]
         off = float((p - start_clock) % MINUTES_PER_DAY)
@@ -333,6 +360,12 @@ def build_problem(fleet: Fleet) -> Problem:
         notes=notes,
         shortfall_policy=fleet.shortfall_policy,
     )
+
+
+def _offset_text(offset: timedelta) -> str:
+    minutes = int(offset.total_seconds() // 60)
+    sign = "+" if minutes >= 0 else "-"
+    return f"UTC{sign}{abs(minutes) // 60:02d}:{abs(minutes) % 60:02d}"
 
 
 def _earliest_clock(clocks: list[int]) -> int:
