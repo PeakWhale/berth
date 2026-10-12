@@ -1,0 +1,231 @@
+# Example fleet: 30 electric school buses with a midday break.
+# Made-up data (fixed random seed in scripts/make_examples.py).
+name: School buses - midday break and night
+description: >
+  30 school buses park between the morning and afternoon routes
+  (about 09:00 to 14:00) and again overnight. There are 24 chargers
+  for 30 buses (20 AC at 19.2 kW and 4 DC at 60 kW) and a 400 kW site
+  connection shared with the bus garage.
+start: "09:00"
+step_minutes: 15
+tariff: tariff-tou.yaml
+site:
+  power_limit_kw: 400
+  other_load_kw:            # bus garage and workshop
+    - {from: "07:00", to: "17:00", kw: 60}
+    - {from: "17:00", to: "07:00", kw: 20}
+  chargers:
+    - {count: 20, kw: 19.2, name: "AC 19.2 kW"}
+    - {count: 4, kw: 60, name: "DC 60 kW"}
+  charging_efficiency: 0.92
+vehicles:
+  - id: BUS-01
+    battery_kwh: 155
+    max_kw: 60
+    arrival_soc_pct: 46
+    stops:
+      - {arrival: "09:35", departure: "14:30", required_soc_pct: 76}
+      - {arrival: "16:55", departure: "06:20", required_soc_pct: 90, trip_kwh: 71}
+  - id: BUS-02
+    battery_kwh: 196
+    max_kw: 60
+    arrival_soc_pct: 53
+    stops:
+      - {arrival: "09:35", departure: "14:40", required_soc_pct: 73}
+      - {arrival: "16:55", departure: "06:00", required_soc_pct: 90, trip_kwh: 84}
+  - id: BUS-03
+    battery_kwh: 226
+    max_kw: 60
+    arrival_soc_pct: 63
+    stops:
+      - {arrival: "09:10", departure: "14:00", required_soc_pct: 65}
+      - {arrival: "17:10", departure: "06:40", required_soc_pct: 90, trip_kwh: 79}
+  - id: BUS-04
+    battery_kwh: 226
+    max_kw: 60
+    arrival_soc_pct: 64
+    stops:
+      - {arrival: "09:30", departure: "14:35", required_soc_pct: 64}
+      - {arrival: "16:25", departure: "06:35", required_soc_pct: 90, trip_kwh: 77}
+  - id: BUS-05
+    battery_kwh: 155
+    max_kw: 60
+    arrival_soc_pct: 37
+    stops:
+      - {arrival: "09:05", departure: "14:35", required_soc_pct: 84}
+      - {arrival: "17:05", departure: "06:35", required_soc_pct: 90, trip_kwh: 83}
+  - id: BUS-06
+    battery_kwh: 226
+    max_kw: 60
+    arrival_soc_pct: 53
+    stops:
+      - {arrival: "09:40", departure: "14:20", required_soc_pct: 68}
+      - {arrival: "16:55", departure: "06:30", required_soc_pct: 90, trip_kwh: 85}
+  - id: BUS-07
+    battery_kwh: 226
+    max_kw: 60
+    arrival_soc_pct: 62
+    stops:
+      - {arrival: "09:40", departure: "14:35", required_soc_pct: 62}
+      - {arrival: "17:15", departure: "06:30", required_soc_pct: 90, trip_kwh: 72}
+  - id: BUS-08
+    battery_kwh: 196
+    max_kw: 60
+    arrival_soc_pct: 59
+    stops:
+      - {arrival: "09:20", departure: "14:00", required_soc_pct: 63}
+      - {arrival: "16:15", departure: "06:10", required_soc_pct: 90, trip_kwh: 64}
+  - id: BUS-09
+    battery_kwh: 226
+    max_kw: 60
+    arrival_soc_pct: 53
+    stops:
+      - {arrival: "09:35", departure: "14:40", required_soc_pct: 63}
+      - {arrival: "16:50", departure: "06:25", required_soc_pct: 90, trip_kwh: 74}
+  - id: BUS-10
+    battery_kwh: 155
+    max_kw: 60
+    arrival_soc_pct: 49
+    stops:
+      - {arrival: "09:35", departure: "14:35", required_soc_pct: 80}
+      - {arrival: "16:55", departure: "06:35", required_soc_pct: 90, trip_kwh: 77}
+  - id: BUS-11
+    battery_kwh: 196
+    max_kw: 60
+    arrival_soc_pct: 53
+    stops:
+      - {arrival: "09:00", departure: "14:20", required_soc_pct: 69}
+      - {arrival: "16:40", departure: "06:35", required_soc_pct: 90, trip_kwh: 76}
+  - id: BUS-12
+    battery_kwh: 155
+    max_kw: 60
+    arrival_soc_pct: 45
+    stops:
+      - {arrival: "09:40", departure: "14:20", required_soc_pct: 80}
+      - {arrival: "16:50", departure: "06:10", required_soc_pct: 90, trip_kwh: 77}
+  - id: BUS-13
+    battery_kwh: 196
+    max_kw: 60
+    arrival_soc_pct: 49
+    stops:
+      - {arrival: "09:35", departure: "14:05", required_soc_pct: 70}
+      - {arrival: "17:05", departure: "06:20", required_soc_pct: 90, trip_kwh: 78}
+  - id: BUS-14
+    battery_kwh: 196
+    max_kw: 60
+    arrival_soc_pct: 56
+    stops:
+      - {arrival: "09:15", departure: "14:30", required_soc_pct: 60}
+      - {arrival: "16:25", departure: "06:35", required_soc_pct: 90, trip_kwh: 58}
+  - id: BUS-15
+    battery_kwh: 155
+    max_kw: 60
+    arrival_soc_pct: 53
+    stops:
+      - {arrival: "09:35", departure: "14:40", required_soc_pct: 65}
+      - {arrival: "16:20", departure: "06:45", required_soc_pct: 90, trip_kwh: 55}
+  - id: BUS-16
+    battery_kwh: 155
+    max_kw: 60
+    arrival_soc_pct: 50
+    stops:
+      - {arrival: "09:00", departure: "14:40", required_soc_pct: 67}
+      - {arrival: "16:35", departure: "06:25", required_soc_pct: 90, trip_kwh: 58}
+  - id: BUS-17
+    battery_kwh: 155
+    max_kw: 60
+    arrival_soc_pct: 55
+    stops:
+      - {arrival: "09:35", departure: "14:10", required_soc_pct: 72}
+      - {arrival: "16:55", departure: "06:15", required_soc_pct: 90, trip_kwh: 65}
+  - id: BUS-18
+    battery_kwh: 196
+    max_kw: 60
+    arrival_soc_pct: 53
+    stops:
+      - {arrival: "09:40", departure: "14:20", required_soc_pct: 60}
+      - {arrival: "16:20", departure: "06:30", required_soc_pct: 90, trip_kwh: 59}
+  - id: BUS-19
+    battery_kwh: 226
+    max_kw: 60
+    arrival_soc_pct: 63
+    stops:
+      - {arrival: "09:10", departure: "14:20", required_soc_pct: 67}
+      - {arrival: "16:55", departure: "06:30", required_soc_pct: 90, trip_kwh: 84}
+  - id: BUS-20
+    battery_kwh: 196
+    max_kw: 60
+    arrival_soc_pct: 49
+    stops:
+      - {arrival: "09:40", departure: "14:15", required_soc_pct: 60}
+      - {arrival: "16:45", departure: "06:00", required_soc_pct: 90, trip_kwh: 59}
+  - id: BUS-21
+    battery_kwh: 155
+    max_kw: 60
+    arrival_soc_pct: 47
+    stops:
+      - {arrival: "09:05", departure: "14:00", required_soc_pct: 84}
+      - {arrival: "16:40", departure: "06:25", required_soc_pct: 90, trip_kwh: 83}
+  - id: BUS-22
+    battery_kwh: 155
+    max_kw: 60
+    arrival_soc_pct: 55
+    stops:
+      - {arrival: "09:35", departure: "14:25", required_soc_pct: 76}
+      - {arrival: "17:05", departure: "06:20", required_soc_pct: 90, trip_kwh: 71}
+  - id: BUS-23
+    battery_kwh: 196
+    max_kw: 60
+    arrival_soc_pct: 57
+    stops:
+      - {arrival: "09:05", departure: "14:35", required_soc_pct: 73}
+      - {arrival: "16:50", departure: "06:45", required_soc_pct: 90, trip_kwh: 84}
+  - id: BUS-24
+    battery_kwh: 226
+    max_kw: 60
+    arrival_soc_pct: 55
+    stops:
+      - {arrival: "09:10", departure: "14:40", required_soc_pct: 57}
+      - {arrival: "16:30", departure: "06:30", required_soc_pct: 90, trip_kwh: 60}
+  - id: BUS-25
+    battery_kwh: 226
+    max_kw: 60
+    arrival_soc_pct: 61
+    stops:
+      - {arrival: "09:15", departure: "14:05", required_soc_pct: 61}
+      - {arrival: "16:55", departure: "06:30", required_soc_pct: 90, trip_kwh: 69}
+  - id: BUS-26
+    battery_kwh: 155
+    max_kw: 60
+    arrival_soc_pct: 51
+    stops:
+      - {arrival: "09:10", departure: "14:00", required_soc_pct: 78}
+      - {arrival: "17:05", departure: "06:40", required_soc_pct: 90, trip_kwh: 75}
+  - id: BUS-27
+    battery_kwh: 155
+    max_kw: 60
+    arrival_soc_pct: 45
+    stops:
+      - {arrival: "09:15", departure: "14:35", required_soc_pct: 83}
+      - {arrival: "17:10", departure: "06:00", required_soc_pct: 90, trip_kwh: 82}
+  - id: BUS-28
+    battery_kwh: 155
+    max_kw: 60
+    arrival_soc_pct: 42
+    stops:
+      - {arrival: "09:15", departure: "14:40", required_soc_pct: 76}
+      - {arrival: "16:25", departure: "06:10", required_soc_pct: 90, trip_kwh: 71}
+  - id: BUS-29
+    battery_kwh: 226
+    max_kw: 60
+    arrival_soc_pct: 54
+    stops:
+      - {arrival: "09:30", departure: "14:20", required_soc_pct: 57}
+      - {arrival: "16:45", departure: "06:40", required_soc_pct: 90, trip_kwh: 60}
+  - id: BUS-30
+    battery_kwh: 196
+    max_kw: 60
+    arrival_soc_pct: 48
+    stops:
+      - {arrival: "09:30", departure: "14:20", required_soc_pct: 59}
+      - {arrival: "16:25", departure: "06:25", required_soc_pct: 90, trip_kwh: 57}

@@ -1,0 +1,29 @@
+# Example fleet that CANNOT be fully charged (an infeasible case).
+# Made-up data (fixed random seed in scripts/make_examples.py).
+name: Late-shift vans - not enough for everyone
+description: >
+  11 vans share 4 chargers and a 60 kW site connection. Five EARLY vans
+  are back late and leave again before 05:00, five DAY vans leave after
+  08:30, and SHORT-STOP is parked for only 90 minutes. Berth shows who
+  falls short, by how much, and why.
+start: "22:00"
+step_minutes: 15
+tariff: tariff-tou.yaml
+site:
+  power_limit_kw: 60
+  other_load_kw: 5
+  chargers:
+    - {count: 4, kw: 22, name: "AC 22 kW"}
+  charging_efficiency: 0.92
+vehicles:
+  - {id: "EARLY-1", battery_kwh: 90, max_kw: 22, arrival: "22:40", departure: "04:40", arrival_soc_pct: 22, required_soc_pct: 90}
+  - {id: "EARLY-2", battery_kwh: 90, max_kw: 22, arrival: "23:05", departure: "05:00", arrival_soc_pct: 21, required_soc_pct: 90}
+  - {id: "EARLY-3", battery_kwh: 90, max_kw: 22, arrival: "22:50", departure: "04:45", arrival_soc_pct: 17, required_soc_pct: 90}
+  - {id: "EARLY-4", battery_kwh: 90, max_kw: 22, arrival: "22:55", departure: "04:50", arrival_soc_pct: 22, required_soc_pct: 90}
+  - {id: "EARLY-5", battery_kwh: 90, max_kw: 22, arrival: "23:05", departure: "04:30", arrival_soc_pct: 23, required_soc_pct: 90}
+  - {id: "DAY-1", battery_kwh: 70, max_kw: 22, arrival: "23:40", departure: "09:00", arrival_soc_pct: 34, required_soc_pct: 80}
+  - {id: "DAY-2", battery_kwh: 70, max_kw: 22, arrival: "23:05", departure: "09:00", arrival_soc_pct: 33, required_soc_pct: 80}
+  - {id: "DAY-3", battery_kwh: 70, max_kw: 22, arrival: "23:15", departure: "08:30", arrival_soc_pct: 31, required_soc_pct: 80}
+  - {id: "DAY-4", battery_kwh: 70, max_kw: 22, arrival: "23:35", departure: "08:55", arrival_soc_pct: 35, required_soc_pct: 80}
+  - {id: "DAY-5", battery_kwh: 70, max_kw: 22, arrival: "23:30", departure: "08:50", arrival_soc_pct: 40, required_soc_pct: 80}
+  - {id: "SHORT-STOP", battery_kwh: 90, max_kw: 22, arrival: "02:30", departure: "04:00", arrival_soc_pct: 15, required_soc_pct: 90}

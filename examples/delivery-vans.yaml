@@ -1,0 +1,31 @@
+# Example fleet: 12 electric delivery vans at an overnight depot.
+# Made-up data (fixed random seed in scripts/make_examples.py).
+name: Delivery vans - overnight depot
+description: >
+  12 delivery vans come back between 17:00 and 19:30 and leave again
+  between 05:30 and 07:30. One 19.2 kW charger per van, but the site
+  connection is 150 kW and the warehouse also uses power.
+start: "16:00"
+step_minutes: 15
+tariff: tariff-tou.yaml
+site:
+  power_limit_kw: 150
+  other_load_kw:            # warehouse lights, offices, cold room
+    - {from: "06:00", to: "20:00", kw: 35}
+    - {from: "20:00", to: "06:00", kw: 12}
+  chargers:
+    - {count: 12, kw: 19.2, name: "AC 19.2 kW"}
+  charging_efficiency: 0.92
+vehicles:
+  - {id: "VAN-01", battery_kwh: 70, max_kw: 11, arrival: "17:50", departure: "06:50", arrival_soc_pct: 45, required_soc_pct: 80}
+  - {id: "VAN-02", battery_kwh: 70, max_kw: 11, arrival: "19:20", departure: "07:05", arrival_soc_pct: 34, required_soc_pct: 95}
+  - {id: "VAN-03", battery_kwh: 113, max_kw: 19.2, arrival: "18:25", departure: "07:25", arrival_soc_pct: 39, required_soc_pct: 95}
+  - {id: "VAN-04", battery_kwh: 113, max_kw: 19.2, arrival: "18:10", departure: "06:05", arrival_soc_pct: 15, required_soc_pct: 80}
+  - {id: "VAN-05", battery_kwh: 70, max_kw: 11, arrival: "17:45", departure: "05:45", arrival_soc_pct: 29, required_soc_pct: 80}
+  - {id: "VAN-06", battery_kwh: 113, max_kw: 19.2, arrival: "18:15", departure: "07:15", arrival_soc_pct: 25, required_soc_pct: 85}
+  - {id: "VAN-07", battery_kwh: 90, max_kw: 19.2, arrival: "17:40", departure: "06:25", arrival_soc_pct: 44, required_soc_pct: 90}
+  - {id: "VAN-08", battery_kwh: 90, max_kw: 19.2, arrival: "18:55", departure: "06:50", arrival_soc_pct: 35, required_soc_pct: 80}
+  - {id: "VAN-09", battery_kwh: 113, max_kw: 19.2, arrival: "17:50", departure: "05:40", arrival_soc_pct: 32, required_soc_pct: 90}
+  - {id: "VAN-10", battery_kwh: 90, max_kw: 19.2, arrival: "18:10", departure: "05:50", arrival_soc_pct: 43, required_soc_pct: 90}
+  - {id: "VAN-11", battery_kwh: 70, max_kw: 11, arrival: "19:15", departure: "07:20", arrival_soc_pct: 26, required_soc_pct: 90}
+  - {id: "VAN-12", battery_kwh: 90, max_kw: 19.2, arrival: "18:05", departure: "05:40", arrival_soc_pct: 27, required_soc_pct: 95}

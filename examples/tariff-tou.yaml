@@ -1,0 +1,12 @@
+# Example time-of-use tariff for the Berth examples.
+# The numbers are made up, in a shape that is common for commercial
+# electricity tariffs. This is NOT a real utility tariff.
+name: Example TOU (made up)
+currency: USD
+energy_price_per_kwh:
+  - {from: "00:00", to: "06:00", price: 0.11}   # night, cheapest
+  - {from: "06:00", to: "16:00", price: 0.19}   # day
+  - {from: "16:00", to: "21:00", price: 0.38}   # evening peak
+  - {from: "21:00", to: "24:00", price: 0.16}   # late evening
+demand_charge_per_kw: 15.00   # per kW of the monthly peak
+billing_days: 30              # a one-day plan carries 1/30 of the monthly demand charge
