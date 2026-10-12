@@ -29,6 +29,12 @@ def _add_input_args(p: argparse.ArgumentParser) -> None:
     o.add_argument("--hours", type=float, help="plan length in hours (default: until the last departure)")
     o.add_argument("--step", type=int, metavar="MIN", help="time step in minutes (default 15)")
     o.add_argument("--time-limit", type=float, metavar="S", help="solver time limit in seconds (default 30)")
+    o.add_argument(
+        "--shortfall-policy",
+        choices=["most_ready", "fair"],
+        help="when not every vehicle can be ready: most_ready gets the most vehicles fully ready "
+        "(default), fair keeps the biggest shortfall as small as possible",
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -108,6 +114,8 @@ def load_input(args: argparse.Namespace):
         overrides["step_minutes"] = args.step
     if args.time_limit is not None:
         overrides["time_limit_s"] = args.time_limit
+    if args.shortfall_policy is not None:
+        overrides["shortfall_policy"] = args.shortfall_policy
     if overrides:
         fleet = parse_fleet({**fleet.model_dump(by_alias=True, exclude_none=True), **overrides})
     return fleet, stem

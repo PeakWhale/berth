@@ -17,8 +17,8 @@ from berth import __version__
 from berth.errors import BerthInputError, BerthSolverError
 from berth.examples import list_examples, load_example
 from berth.loaders import load_fleet_text
-from berth.models import Fleet
-from berth.planner import parse_fleet, plan
+from berth.models import Fleet, ShortfallPolicy
+from berth.planner import parse_fleet, plan, with_policy
 from berth.report import explain
 from berth.results import PlanResult
 
@@ -31,7 +31,9 @@ charging kW), the site (chargers, power limit, other building load) and a
 tariff (price per kWh by time of day, optional demand charge per kW). It
 returns a charging schedule that has every vehicle ready at the lowest cost,
 compared with charging at full power on arrival. If not every vehicle can be
-ready it says which ones fall short, by how many kWh, and why.
+ready it says which ones fall short, by how many kWh, and why. By default it
+then gets as many vehicles fully ready as possible (shortfall_policy
+most_ready); shortfall_policy fair shares the shortfall instead.
 
 Pass the fleet as `fleet` (an object), as `fleet_yaml` (YAML text), or name a
 bundled example with `example` (delivery-vans, school-buses,
@@ -42,7 +44,12 @@ means the next day.
 server = MCPServer("berth", instructions=INSTRUCTIONS, version=__version__)
 
 
-def _get_fleet(fleet: Fleet | dict | None, fleet_yaml: str | None, example: str | None) -> Fleet:
+def _get_fleet(
+    fleet: Fleet | dict | None,
+    fleet_yaml: str | None,
+    example: str | None,
+    shortfall_policy: str | None = None,
+) -> Fleet:
     given = [x for x in (fleet, fleet_yaml, example) if x not in (None, "", {})]
     if len(given) != 1:
         names = ", ".join(e["name"] for e in list_examples())
@@ -58,6 +65,8 @@ def _get_fleet(fleet: Fleet | dict | None, fleet_yaml: str | None, example: str 
                         "fleet")
     if f.time_limit_s > MAX_TIME_LIMIT:
         f = f.model_copy(update={"time_limit_s": MAX_TIME_LIMIT})
+    if shortfall_policy:
+        f = with_policy(f, shortfall_policy)
     return f
 
 
@@ -65,6 +74,7 @@ def _compact(r: PlanResult, include_schedule: bool) -> dict[str, Any]:
     out: dict[str, Any] = {
         "headline": r.headline,
         "all_ready": r.all_ready,
+        "shortfall_policy": r.shortfall_policy,
         "currency": r.currency,
         "optimized": r.optimized.model_dump(),
         "charge_on_arrival": r.baseline.model_dump(),
@@ -120,15 +130,19 @@ def plan_charging(
     fleet_yaml: str | None = None,
     example: str | None = None,
     include_schedule: bool = False,
+    shortfall_policy: ShortfallPolicy | None = None,
 ) -> dict[str, Any]:
     """Plan EV fleet charging at the lowest energy + demand cost so every
     vehicle is ready at departure, within charger count, charger power,
     vehicle charging rate and site power limit. Returns cost, peak and
     readiness for the plan and for charging at full power on arrival, the
     charging windows per vehicle, and any shortfalls with reasons.
-    Set include_schedule=true to also get the kW per vehicle per time step."""
+    Set include_schedule=true to also get the kW per vehicle per time step.
+    shortfall_policy (only matters when not every vehicle can be ready):
+    most_ready (default) gets the most vehicles fully ready; fair keeps the
+    biggest shortfall as small as possible."""
     try:
-        result = plan(_get_fleet(fleet, fleet_yaml, example))
+        result = plan(_get_fleet(fleet, fleet_yaml, example, shortfall_policy))
     except (BerthInputError, BerthSolverError) as exc:
         return _error(exc)
     return _compact(result, include_schedule)
@@ -139,13 +153,16 @@ def explain_plan(
     fleet: Fleet | None = None,
     fleet_yaml: str | None = None,
     example: str | None = None,
+    shortfall_policy: ShortfallPolicy | None = None,
 ) -> str:
     """Plan EV fleet charging and explain the result in plain English: when
     vehicles charge and at what price, the savings compared with charging on
     arrival, the peak power, and why any vehicle falls short with what would
-    help (more site power, more chargers, or more time)."""
+    help (more site power, more chargers, or more time). shortfall_policy:
+    most_ready (default, most vehicles fully ready) or fair (smallest
+    biggest shortfall)."""
     try:
-        return explain(plan(_get_fleet(fleet, fleet_yaml, example)))
+        return explain(plan(_get_fleet(fleet, fleet_yaml, example, shortfall_policy)))
     except (BerthInputError, BerthSolverError) as exc:
         return "Berth could not plan this fleet:\n" + "\n".join(f"- {p}" for p in _error(exc)["problems"])
 

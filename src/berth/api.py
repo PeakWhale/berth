@@ -9,7 +9,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Query, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
@@ -20,7 +20,7 @@ from berth import __version__
 from berth.errors import BerthInputError, BerthSolverError, format_error_list
 from berth.examples import list_examples, load_example
 from berth.loaders import fleet_to_yaml, load_fleet_text, read_vehicles_csv
-from berth.models import Fleet, Vehicle
+from berth.models import Fleet, ShortfallPolicy, Vehicle
 from berth.planner import parse_fleet, plan
 from berth.report import explain, schedule_csv
 from berth.results import PlanResult
@@ -76,10 +76,20 @@ async def _text(request: Request) -> str:
         raise BerthInputError("the request body is not UTF-8 text") from None
 
 
-def _capped(fleet: Fleet) -> Fleet:
+def _capped(fleet: Fleet, shortfall_policy: str | None = None) -> Fleet:
+    """Cap the solver time limit; apply the shortfall_policy query parameter."""
+    update: dict = {}
     if fleet.time_limit_s > MAX_TIME_LIMIT:
-        fleet = fleet.model_copy(update={"time_limit_s": MAX_TIME_LIMIT})
-    return fleet
+        update["time_limit_s"] = MAX_TIME_LIMIT
+    if shortfall_policy is not None:
+        update["shortfall_policy"] = shortfall_policy
+    return fleet.model_copy(update=update) if update else fleet
+
+
+POLICY_HELP = (
+    "Optional. Overrides the fleet's shortfall_policy: most_ready (most vehicles fully ready first) "
+    "or fair (smallest biggest shortfall)."
+)
 
 
 # ---- API --------------------------------------------------------------------
@@ -106,29 +116,33 @@ def example(name: str, format: str = "json"):
 
 
 @app.post("/api/plan", response_model=PlanResult, tags=["plan"])
-def plan_json(fleet: Fleet) -> PlanResult:
+def plan_json(fleet: Fleet, shortfall_policy: ShortfallPolicy | None = Query(None, description=POLICY_HELP)) -> PlanResult:
     """Plan charging for a fleet given as JSON."""
-    return plan(_capped(fleet))
+    return plan(_capped(fleet, shortfall_policy))
 
 
 @app.post("/api/plan/yaml", response_model=PlanResult, tags=["plan"], openapi_extra=TEXT_BODY)
-async def plan_yaml(request: Request) -> PlanResult:
+async def plan_yaml(
+    request: Request, shortfall_policy: ShortfallPolicy | None = Query(None, description=POLICY_HELP)
+) -> PlanResult:
     """Plan charging for a fleet given as YAML (or JSON) text, like the files in examples/.
     A tariff must be included in the text (not a file name)."""
     fleet = load_fleet_text(await _text(request), "request")
-    return await run_in_threadpool(plan, _capped(fleet))
+    return await run_in_threadpool(plan, _capped(fleet, shortfall_policy))
 
 
 @app.post("/api/explain", response_class=PlainTextResponse, tags=["plan"])
-def explain_json(fleet: Fleet) -> str:
+def explain_json(fleet: Fleet, shortfall_policy: ShortfallPolicy | None = Query(None, description=POLICY_HELP)) -> str:
     """Plan charging and explain the result in plain words."""
-    return explain(plan(_capped(fleet)))
+    return explain(plan(_capped(fleet, shortfall_policy)))
 
 
 @app.post("/api/schedule.csv", response_class=PlainTextResponse, tags=["plan"])
-def schedule(fleet: Fleet) -> PlainTextResponse:
+def schedule(
+    fleet: Fleet, shortfall_policy: ShortfallPolicy | None = Query(None, description=POLICY_HELP)
+) -> PlainTextResponse:
     """Plan charging and return the schedule as CSV (one row per time step, kW per vehicle)."""
-    result = plan(_capped(fleet))
+    result = plan(_capped(fleet, shortfall_policy))
     return PlainTextResponse(
         schedule_csv(result),
         media_type="text/csv",

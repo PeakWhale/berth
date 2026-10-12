@@ -293,6 +293,10 @@ def fleet_to_yaml(fleet: Fleet) -> str:
     for key in ("name", "description", "start", "hours", "step_minutes", "time_limit_s"):
         if key in data:
             lines.append(f"{key}: {_scalar(data[key])}")
+    lines.append(
+        f"shortfall_policy: {data['shortfall_policy']}   "
+        "# if not every vehicle can be ready: most_ready (most vehicles fully ready) or fair (share the shortfall)"
+    )
     names = {"energy_price_per_kwh": "price", "power_limit_kw": "kw", "other_load_kw": "kw"}
     for section in ("site", "tariff"):
         lines.append(f"{section}:")
