@@ -37,6 +37,8 @@ uv run berth serve                                 # 3. open http://127.0.0.1:80
 
 Other commands: `uv run berth examples` (list the example fleets), `uv run berth explain examples/late-shift-infeasible.yaml` (the plan in plain words), `uv run berth plan examples/late-shift-infeasible.yaml --shortfall-policy fair` (share the shortfall instead of getting the most vehicles ready), `uv run berth plan --help`.
 
+Useful `plan` options: `-o FILE` (name of the schedule CSV), `--no-csv`, `--json result.json` (also write the full result as JSON) and `--fail-if-short` (exit with code 4 if a vehicle falls short, handy in scripts). Exit codes: 0 done, 1 input error, 2 bad command-line options, 3 solver error, 4 a vehicle falls short (only with `--fail-if-short`), 5 an output file cannot be written.
+
 Part of the output for the example vans (made-up data):
 
 ```text
