@@ -28,7 +28,7 @@ berth = "berth.cli:main"
 berth-mcp = "berth.mcp_server:main"
 
 [project.urls]
-Homepage = "https://github.com/peakwhale/berth"
+Homepage = "https://github.com/PeakWhale/berth"
 
 [dependency-groups]
 dev = [
