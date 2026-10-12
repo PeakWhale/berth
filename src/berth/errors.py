@@ -75,7 +75,7 @@ def format_error_list(
                 continue
             if isinstance(key, int):
                 parts.append(f"item {key + 1}")
-            elif key == "site" and nxt == "chargers":
+            elif key == "site" and nxt == "chargers" and i + 2 < len(loc) and isinstance(loc[i + 2], int):
                 pass  # shown as "site.chargers group N"
             else:
                 parts.append(str(key))

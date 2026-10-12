@@ -75,6 +75,18 @@ def test_missing_and_misspelled_fields_name_the_vehicle():
     assert "vehicle 1 (V1): max_kW: is not a known field" in text
 
 
+def test_missing_chargers_names_the_site():
+    fleet = make_fleet([van(1)])
+    del fleet["site"]["chargers"]
+    with pytest.raises(BerthInputError) as e:
+        parse_fleet(fleet)
+    assert "site.chargers: is required but missing" in problems_of(e)
+    fleet["site"]["chargers"] = [{"count": 0, "kw": 11}]
+    with pytest.raises(BerthInputError) as e:
+        parse_fleet(fleet)
+    assert "site.chargers group 1: count" in problems_of(e)
+
+
 def test_bad_numbers_and_ranges():
     fleet = make_fleet([van(1, required_soc_pct=120, battery_kwh=-5)])
     with pytest.raises(BerthInputError) as e:
