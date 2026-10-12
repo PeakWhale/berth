@@ -241,6 +241,12 @@ def build_problem(fleet: Fleet) -> Problem:
                 errors.append(f"{where}: arrival {st.arrival} is not after the previous departure")
                 continue
             dep = resolve(st.departure, arr + 1)
+            if dep <= 0:
+                errors.append(
+                    f"{where}: departure {st.departure} is at or before the plan start ({label(0)}), so it cannot "
+                    "charge. Set start earlier or remove this stop."
+                )
+                continue
             if dep <= arr:
                 errors.append(f"{where}: departure {st.departure} must be after arrival {st.arrival}")
                 continue

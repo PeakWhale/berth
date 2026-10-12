@@ -247,6 +247,14 @@ def test_daylight_saving_change_gives_the_real_parked_time():
     assert not r.all_ready
 
 
+def test_departure_before_the_plan_start_is_explained():
+    fleet = make_fleet([van(1, arrival="2026-03-02T13:00", departure="2026-03-02T15:00")])
+    fleet["start"] = "2026-03-02T16:00"
+    with pytest.raises(BerthInputError) as e:
+        build_problem(parse_fleet(fleet))
+    assert "departure 2026-03-02T15:00 is at or before the plan start (2026-03-02 16:00)" in problems_of(e)
+
+
 def test_hours_too_short_is_explained():
     fleet = make_fleet([van(1)])
     fleet["hours"] = 6
