@@ -177,6 +177,7 @@ uv run python scripts/example_results.py
 ![Berth web page with the example delivery vans: summary cards, stacked charging power chart with the site limit and price shading, and the vehicle table](docs/web-page.png)
 
 * Pick an example, open a YAML or JSON fleet file, or load vehicles from a CSV. You can also edit the fleet in the text box.
+* The page cannot read a second file, so a fleet file that names its tariff file (`tariff: tariff-tou.yaml`, like the files in `examples/`) must have the tariff written out instead. For the bundled examples, use **Load example**.
 * **Plan** shows cards (vehicles ready, cost vs on arrival, peak, energy), a stacked power chart per vehicle with the site limit line, the on-arrival line and price shading, a table of vehicles and charging windows, and any shortfalls with reasons.
 * Download the schedule as CSV or the full result as JSON.
 

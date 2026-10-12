@@ -103,8 +103,9 @@ def load_fleet_text(text: str, source: str = "input", base_dir: Path | None = No
         for key, what in (("tariff", "the tariff"), ("vehicles", "the vehicles")):
             if isinstance(data.get(key), str):
                 raise BerthInputError(
-                    f"{key}: '{data[key]}' looks like a file name. Here {what} must be written out in full "
-                    "(file names only work on the command line).",
+                    f"{key}: '{data[key]}' looks like a file name. Here {what} must be written out in full: "
+                    f"put what is in {data[key]} under '{key}:' (file names only work on the command line). "
+                    "The bundled examples can be opened with 'Load example' on the web page.",
                     source,
                 )
     return parse_fleet(data, source)
