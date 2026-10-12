@@ -111,7 +111,15 @@ async def _solver_error(_: Request, exc: BerthSolverError) -> JSONResponse:
 @app.exception_handler(RequestValidationError)
 async def _validation_error(_: Request, exc: RequestValidationError) -> JSONResponse:
     body = exc.body if isinstance(exc.body, dict) else None
-    problems = format_error_list(exc.errors(), body, drop_prefix=("body",))
+    bad_json = [e for e in exc.errors() if e.get("type") == "json_invalid"]
+    if bad_json:
+        problems = [
+            f"the request body is not valid JSON: {(e.get('ctx') or {}).get('error', 'cannot be read')} "
+            f"(at character {e['loc'][-1]})"
+            for e in bad_json
+        ]
+    else:
+        problems = format_error_list(exc.errors(), body, drop_prefix=("body",))
     # the raw inputs are left out: they can hold values JSON cannot show (NaN)
     detail = [{"type": e.get("type"), "loc": list(e.get("loc", ())), "msg": e.get("msg")} for e in exc.errors()]
     return JSONResponse(

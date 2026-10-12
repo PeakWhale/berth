@@ -90,6 +90,13 @@ def test_nan_in_json_is_refused(client):
     assert any("energy_price_per_kwh" in p and "NaN" in p for p in res.json()["problems"])
 
 
+def test_invalid_json_is_explained(client):
+    res = client.post("/api/plan", content="{bad", headers={"Content-Type": "application/json"})
+    assert res.status_code == 422
+    (problem,) = res.json()["problems"]
+    assert problem.startswith("the request body is not valid JSON: Expecting property name")
+
+
 def test_yaml_errors_are_clear(client):
     res = client.post("/api/plan/yaml", content="site: [1, 2\n", headers={"Content-Type": "text/plain"})
     assert res.status_code == 400
