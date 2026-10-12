@@ -45,7 +45,7 @@ def _add_input_args(p: argparse.ArgumentParser) -> None:
         "--shortfall-policy",
         choices=["most_ready", "fair"],
         help="when not every vehicle can be ready: most_ready gets the most vehicles fully ready "
-        "(default), fair keeps the biggest shortfall as small as possible",
+        "(default), fair keeps the biggest avoidable shortfall as small as possible",
     )
 
 

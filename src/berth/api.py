@@ -150,7 +150,7 @@ def _capped(fleet: Fleet, shortfall_policy: str | None = None) -> Fleet:
 
 POLICY_HELP = (
     "Optional. Overrides the fleet's shortfall_policy: most_ready (most vehicles fully ready first) "
-    "or fair (smallest biggest shortfall)."
+    "or fair (smallest biggest avoidable shortfall)."
 )
 
 

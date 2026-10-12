@@ -146,7 +146,9 @@ def plan_charging(
     Set include_schedule=true to also get the kW per vehicle per time step.
     shortfall_policy (only matters when not every vehicle can be ready):
     most_ready (default) gets the most vehicles fully ready; fair keeps the
-    biggest shortfall as small as possible."""
+    biggest avoidable shortfall as small as possible. A shortfall a vehicle
+    could not avoid even charging alone (too little time parked) does not
+    count."""
     try:
         result = plan(_get_fleet(fleet, fleet_yaml, example, shortfall_policy))
     except (BerthInputError, BerthSolverError) as exc:
@@ -166,7 +168,7 @@ def explain_plan(
     arrival, the peak power, and why any vehicle falls short with what would
     help (more site power, more chargers, or more time). shortfall_policy:
     most_ready (default, most vehicles fully ready) or fair (smallest
-    biggest shortfall)."""
+    biggest avoidable shortfall)."""
     try:
         return explain(plan(_get_fleet(fleet, fleet_yaml, example, shortfall_policy)))
     except (BerthInputError, BerthSolverError) as exc:

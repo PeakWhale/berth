@@ -28,6 +28,11 @@ from berth.results import (
     VehicleResult,
 )
 
+AVOIDABLE = (
+    "A shortfall a vehicle could not avoid even charging alone (it is not parked long enough) "
+    "does not count against the others."
+)
+
 
 def parse_fleet(data: Any, source: str | None = None) -> Fleet:
     """Validate a dict (from YAML or JSON) into a Fleet with clear errors."""
@@ -246,16 +251,17 @@ def _build_result(prob, opt, m_opt: Metrics, base_power, m_base: Metrics, diag) 
         if policy == "most_ready":
             notes.append(
                 "Not every vehicle can be ready. Berth first gets as many vehicles fully ready as it can "
-                f"({m_opt.vehicles_ready} of {V}), then keeps the biggest shortfall of the others as small as "
-                "possible, then the total, and only then looks at cost (shortfall_policy: most_ready). "
-                "Use shortfall_policy: fair to share the shortfall over all vehicles instead."
+                f"({m_opt.vehicles_ready} of {V}), then keeps the biggest avoidable shortfall of the others as "
+                "small as possible, then the total, and only then looks at cost (shortfall_policy: most_ready). "
+                "Use shortfall_policy: fair to share the shortfall over all vehicles instead. "
+                + AVOIDABLE
             )
         else:
             notes.append(
                 "Not every vehicle can be ready. Berth shares the shortfall: it gives energy first to the "
-                "vehicles that would be most short (the biggest shortfall as small as possible, then the "
-                "total), and only then looks at cost (shortfall_policy: fair). Use shortfall_policy: "
-                "most_ready to get the most vehicles fully ready instead."
+                "vehicles that would be most short (the biggest avoidable shortfall as small as possible, then "
+                "the total), and only then looks at cost (shortfall_policy: fair). Use shortfall_policy: "
+                "most_ready to get the most vehicles fully ready instead. " + AVOIDABLE
             )
     if not m_base.all_ready:
         worst = m_base.worst

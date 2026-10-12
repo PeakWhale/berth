@@ -163,11 +163,11 @@ function renderShort(r) {
   if (!r.shortfalls.length) { box.hidden = true; return; }
   const o = r.optimized, b = r.baseline;
   const policy = r.shortfall_policy === "fair"
-    ? `Policy <b>fair</b>: the shortfall is shared. Biggest shortfall ${o.max_shortfall_kwh.toFixed(1)} kWh `
+    ? `Policy <b>fair</b>: the avoidable shortfall is shared. Biggest shortfall ${o.max_shortfall_kwh.toFixed(1)} kWh `
       + `(charging on arrival: ${b.max_shortfall_kwh.toFixed(1)} kWh). Set <code>shortfall_policy: most_ready</code> `
       + "to get the most vehicles fully ready."
     : `Policy <b>most_ready</b>: ${o.vehicles_ready} of ${o.vehicles_total} vehicles fully ready `
-      + `(charging on arrival: ${b.vehicles_ready}), then the shortfall of the others is kept as small as possible. `
+      + `(charging on arrival: ${b.vehicles_ready}), then the avoidable shortfall of the others is kept as small as possible. `
       + "Set <code>shortfall_policy: fair</code> to share the shortfall instead.";
   let html = `<h3>Vehicles that fall short</h3><p class="policy">${policy}</p><ul>`;
   for (const item of r.shortfalls) {

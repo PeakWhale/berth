@@ -99,8 +99,8 @@ class PlanResult(BaseModel):
     headline: str = Field(description="One-line summary in plain words.")
     all_ready: bool
     shortfall_policy: str = Field(
-        description="most_ready (most vehicles fully ready first) or fair (smallest biggest shortfall). "
-        "Only matters when not every vehicle can be ready."
+        description="most_ready (most vehicles fully ready first) or fair (smallest biggest avoidable "
+        "shortfall). Only matters when not every vehicle can be ready."
     )
     times: list[str] = Field(description="Start label of each time step.")
     end: str = Field(description="When the last time step ends.")

@@ -367,9 +367,10 @@ class Fleet(BaseModel):
     shortfall_policy: ShortfallPolicy = Field(
         "most_ready",
         description="What to do when not every vehicle can be ready. most_ready (default): get as many "
-        "vehicles fully ready as possible, then keep the biggest shortfall of the others as small as "
-        "possible. fair: keep the biggest shortfall as small as possible over all vehicles, even if "
-        "fewer vehicles are fully ready.",
+        "vehicles fully ready as possible, then keep the biggest avoidable shortfall of the others as "
+        "small as possible. fair: keep the biggest avoidable shortfall as small as possible over all "
+        "vehicles, even if fewer vehicles are fully ready. A shortfall a vehicle could not avoid even "
+        "charging alone (too little time parked) does not count.",
     )
     site: Site
     tariff: Tariff

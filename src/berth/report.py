@@ -155,14 +155,14 @@ def policy_text(r: "PlanResult") -> str:
     o, b = r.optimized, r.baseline
     if r.shortfall_policy == "fair":
         return (
-            f"Policy fair: Berth shares the shortfall. Biggest shortfall {o.max_shortfall_kwh:.1f} kWh "
+            f"Policy fair: Berth shares the avoidable shortfall. Biggest shortfall {o.max_shortfall_kwh:.1f} kWh "
             f"(charging on arrival: {b.max_shortfall_kwh:.1f} kWh); {o.vehicles_ready} of {o.vehicles_total} "
             "vehicles fully ready."
         )
     return (
         f"Policy most_ready: Berth gets as many vehicles fully ready as it can, {o.vehicles_ready} of "
-        f"{o.vehicles_total} (charging on arrival: {b.vehicles_ready}), then keeps the shortfall of the "
-        "others as small as possible."
+        f"{o.vehicles_total} (charging on arrival: {b.vehicles_ready}), then keeps the avoidable "
+        "shortfall of the others as small as possible."
     )
 
 

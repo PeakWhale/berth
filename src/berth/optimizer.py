@@ -20,12 +20,15 @@ Goal, in order:
   1. readiness. When every vehicle can be ready, it is. When not:
        - shortfall_policy "most_ready" (default): first get as many vehicles
          fully ready as possible (an on/off variable per vehicle counts
-         them), then, keeping that number, make the biggest shortfall (kWh
-         missing at a departure) as small as possible, then the total;
-       - shortfall_policy "fair": make the biggest shortfall as small as
-         possible over all vehicles, then the total.
-     A vehicle that is not parked long enough gets as much as it can take,
-     and the part it can never get does not count against the others;
+         them), then, keeping that number, make the biggest avoidable
+         shortfall (kWh missing at a departure) as small as possible, then
+         the total;
+       - shortfall_policy "fair": make the biggest avoidable shortfall as
+         small as possible over all vehicles, then the total.
+     "Avoidable" leaves out the part a vehicle could never get, even
+     charging alone, because it is not parked long enough. That part does
+     not count against the others; only what such a vehicle misses beyond
+     it is weighed like any other shortfall;
   2. cost: energy cost (price x energy) plus demand charge (rate x peak kW);
   3. tidy: keep the cost at its lowest value and, among plans with that
      cost, prefer a lower peak and let the vehicles that leave first charge
