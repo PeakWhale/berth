@@ -8,6 +8,9 @@ description: >
   falls short, by how much, and why.
 start: "22:00"
 step_minutes: 15
+# Not every van can be ready. most_ready (the default) gets the most vans
+# fully ready; fair shares the shortfall over all vans instead.
+shortfall_policy: most_ready
 tariff: tariff-tou.yaml
 site:
   power_limit_kw: 60
