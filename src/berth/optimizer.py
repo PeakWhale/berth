@@ -40,6 +40,11 @@ from berth.solver import INF, LinearModel, SolveResult
 
 TOL_KWH = 1e-3
 COST_GAP = 0.01  # stop when the cost is proven within 1 % of the lowest possible
+# The tidy step only makes the schedule neater at the same cost, so it gets a
+# small search. A node limit (not only a time limit) keeps the result the
+# same from run to run on a busy or slow computer.
+TIDY_NODES = 20
+TIDY_SECONDS = 5.0
 
 
 def contested(prob: Problem, vehicles: list[int]) -> bool:
@@ -383,8 +388,8 @@ class _Stages:
                 return None
             row = (list(objective), list(objective.values()), -INF,
                    exact.objective + max(1e-7 * abs(exact.objective), 1e-6))
-            neat = m.solve(tidy, bounds={**bounds, **fix}, extra_rows=rows + [row],
-                           time_limit=min(self.remaining(), 3.0), mip_gap=1e-3, start=exact.x)
+            neat = m.solve(tidy, bounds={**bounds, **fix}, extra_rows=rows + [row], mip_gap=1e-3,
+                           max_nodes=TIDY_NODES, time_limit=min(self.remaining(), TIDY_SECONDS), start=exact.x)
             use = neat if neat.has_solution else exact
             for t in last:
                 for _, us in self.model.u_at[t]:
@@ -470,7 +475,7 @@ def optimize(
                          time_limit=run.remaining())
         else:
             r4 = m.solve(tidy, bounds=bounds, extra_rows=rows + [cost_row], mip_gap=1e-3, start=r3.x,
-                         time_limit=min(run.remaining(), 3.0))
+                         max_nodes=TIDY_NODES, time_limit=min(run.remaining(), TIDY_SECONDS))
         if r4.has_solution:
             best = r4
             stages.append("tidy")

@@ -24,6 +24,7 @@ class SolveResult:
     objective: float
     gap: float | None
     seconds: float
+    nodes: int = 0
 
 
 class LinearModel:
@@ -69,10 +70,14 @@ class LinearModel:
         time_limit: float = 30.0,
         mip_gap: float = 1e-4,
         abs_gap: float | None = None,
+        max_nodes: int | None = None,
         start: np.ndarray | None = None,
         relax: bool = False,
     ) -> SolveResult:
-        """Solve. `relax=True` ignores integrality (the LP relaxation)."""
+        """Solve. `relax=True` ignores integrality (the LP relaxation).
+        `max_nodes` stops a mixed-integer search after that many
+        branch-and-bound nodes (unlike a time limit, the result does not
+        depend on how fast the computer is)."""
         started = time.perf_counter()
         n = self.n_vars
         lb = np.array(self.lb, dtype=float)
@@ -120,6 +125,8 @@ class LinearModel:
         h.setOptionValue("mip_rel_gap", float(mip_gap))
         if abs_gap is not None:
             h.setOptionValue("mip_abs_gap", float(abs_gap))
+        if max_nodes is not None:
+            h.setOptionValue("mip_max_nodes", int(max_nodes))
         h.setOptionValue("random_seed", 0)
         h.passModel(lp)
         if start is not None and is_mip:
@@ -143,4 +150,5 @@ class LinearModel:
             objective=float(info.objective_function_value) if has_solution else float("nan"),
             gap=gap,
             seconds=time.perf_counter() - started,
+            nodes=int(info.mip_node_count) if is_mip else 0,
         )
