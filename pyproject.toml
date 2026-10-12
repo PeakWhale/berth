@@ -1,0 +1,50 @@
+[project]
+name = "peakwhale-berth"
+version = "0.1.0"
+description = "Free EV fleet charging planner: meet every departure at the lowest energy and demand cost, within your chargers and site power limit."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [{ name = "PeakWhale" }]
+keywords = ["ev", "fleet", "charging", "smart-charging", "optimization", "linear-programming", "highs", "mcp", "fastapi"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+    "Topic :: Scientific/Engineering",
+]
+dependencies = [
+    "highspy>=1.7",
+    "numpy>=1.26",
+    "pydantic>=2.6",
+    "pyyaml>=6.0",
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+    "mcp>=2.0,<3",
+]
+
+[project.scripts]
+berth = "berth.cli:main"
+berth-mcp = "berth.mcp_server:main"
+
+[project.urls]
+Homepage = "https://github.com/peakwhale/berth"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "httpx>=0.27",
+]
+
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/berth"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"examples" = "berth/examples"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
