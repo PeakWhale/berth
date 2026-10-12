@@ -10,7 +10,7 @@ from pathlib import Path
 from berth import __version__
 from berth.errors import BerthInputError, BerthSolverError
 
-EXIT_INPUT, EXIT_SOLVER, EXIT_SHORT = 1, 3, 4
+EXIT_INPUT, EXIT_SOLVER, EXIT_SHORT, EXIT_OUTPUT = 1, 3, 4, 5
 
 
 def _number(text: str) -> float:
@@ -142,14 +142,25 @@ def cmd_plan(args: argparse.Namespace) -> int:
     print(summary_text(result))
     if not args.no_csv:
         out = Path(args.output) if args.output else Path(f"{stem}-schedule.csv")
-        out.write_text(schedule_csv(result), encoding="utf-8")
+        _write(out, schedule_csv(result))
         print(f"\nSchedule written to {out}")
     if args.json:
-        Path(args.json).write_text(result.model_dump_json(indent=2), encoding="utf-8")
+        _write(Path(args.json), result.model_dump_json(indent=2))
         print(f"Full result written to {args.json}")
     if args.fail_if_short and not result.all_ready:
         return EXIT_SHORT
     return 0
+
+
+class OutputError(Exception):
+    """A result file could not be written."""
+
+
+def _write(path: Path, text: str) -> None:
+    try:
+        path.write_text(text, encoding="utf-8")
+    except OSError as exc:
+        raise OutputError(f"could not write {path}: {exc.strerror or exc}") from None
 
 
 def cmd_explain(args: argparse.Namespace) -> int:
@@ -198,6 +209,9 @@ def main(argv: list[str] | None = None) -> int:
     except BerthSolverError as exc:
         print(f"Solver error: {exc}", file=sys.stderr)
         return EXIT_SOLVER
+    except OutputError as exc:
+        print(f"Output error: {exc}", file=sys.stderr)
+        return EXIT_OUTPUT
     except BrokenPipeError:  # output piped into head, less, ...
         sys.stderr.close()
         return 0

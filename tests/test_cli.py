@@ -5,7 +5,7 @@ from __future__ import annotations
 import csv
 import json
 
-from berth.cli import EXIT_INPUT, EXIT_SHORT, main
+from berth.cli import EXIT_INPUT, EXIT_OUTPUT, EXIT_SHORT, main
 
 from conftest import EXAMPLES
 
@@ -59,6 +59,14 @@ def test_nan_on_the_command_line_is_refused(capsys):
         main(["plan", "--example", "delivery-vans", "--no-csv", "--time-limit", "nan"])
     assert e.value.code == 2
     assert "not allowed" in capsys.readouterr().err
+
+
+def test_output_that_cannot_be_written_is_a_clear_error(tmp_path, capsys):
+    code = main(["plan", "--example", "delivery-vans", "-o", str(tmp_path / "no-such-folder" / "x.csv")])
+    assert code == EXIT_OUTPUT
+    err = capsys.readouterr().err
+    assert err.startswith("Output error: could not write")
+    assert "Traceback" not in err
 
 
 def test_explain_and_examples(capsys):

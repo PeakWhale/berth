@@ -163,6 +163,8 @@ def _read(path: Path, referenced_from: str | None = None) -> str:
         return path.read_text(encoding="utf-8-sig")
     except UnicodeDecodeError:
         raise BerthInputError("the file is not UTF-8 text", str(path)) from None
+    except OSError as exc:
+        raise BerthInputError(f"cannot read the file ({exc.strerror or exc})", str(path)) from None
 
 
 # ---------------------------------------------------------------------------
