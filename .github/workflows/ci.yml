@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install
+        run: uv sync --frozen
+      - name: Run tests
+        run: uv run pytest -q
+      - name: Run the examples
+        run: |
+          uv run berth plan examples/delivery-vans.yaml --no-csv
+          uv run berth plan examples/late-shift-infeasible.yaml --no-csv
+          uv run python scripts/example_results.py
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t berth .
+      - name: Plan an example inside the image
+        run: docker run --rm berth berth plan --example delivery-vans --no-csv
