@@ -306,17 +306,36 @@ class _Stages:
                 if r is None:
                     return None
             fix.update(self.model.fix_chargers(x, steps[i:i + chunk]))
-        # the last hours have nothing after them to make up for rounding:
-        # solve them exactly (a small mixed-integer problem)
-        fixed = m.solve(objective, bounds={**bounds, **fix}, extra_rows=rows,
-                        time_limit=self.remaining(), mip_gap=gap)
-        if not fixed.has_solution:
-            return None
-        for t in steps[starts[-1]:]:
-            for _, us in self.model.u_at[t]:
-                for u in us:
-                    val = float(round(fixed.x[u]))
-                    fix[u] = (val, val)
+        # The last hours have nothing after them to make up for rounding.
+        # Try rounding them too; if that loses too much, solve them exactly
+        # (a small mixed-integer problem), then tidy them at the same value.
+        last = steps[starts[-1]:]
+        if starts[-1] > 0:
+            r, x = relaxed(fix)
+            if r is None:
+                return None
+        trial = {**fix, **self.model.fix_chargers(x, last)}
+        fixed = m.solve(objective, bounds={**bounds, **trial}, extra_rows=rows, time_limit=self.remaining())
+        if fixed.has_solution and fixed.objective <= bound + max(gap * abs(bound), abs_gap):
+            fix = trial
+        else:
+            exact = m.solve(objective, bounds={**bounds, **fix}, extra_rows=rows,
+                            time_limit=self.remaining(), mip_gap=gap)
+            if not exact.has_solution:
+                return None
+            row = (list(objective), list(objective.values()), -INF,
+                   exact.objective + max(1e-7 * abs(exact.objective), 1e-6))
+            neat = m.solve(tidy, bounds={**bounds, **fix}, extra_rows=rows + [row],
+                           time_limit=min(self.remaining(), 5.0), mip_gap=1e-3, start=exact.x)
+            use = neat if neat.has_solution else exact
+            for t in last:
+                for _, us in self.model.u_at[t]:
+                    for u in us:
+                        val = float(round(use.x[u]))
+                        fix[u] = (val, val)
+            fixed = m.solve(objective, bounds={**bounds, **fix}, extra_rows=rows, time_limit=self.remaining())
+            if not fixed.has_solution:
+                return None
         accepted = fixed.objective <= bound + max(gap * abs(bound), abs_gap)
         fixed.gap = max(0.0, fixed.objective - bound) / max(abs(fixed.objective), 1e-9)
         fixed.optimal = accepted
