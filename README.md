@@ -96,7 +96,7 @@ vehicles:
 | `stops` | instead of one arrival and departure: a list of stops, each with `arrival`, `departure`, `required_soc_pct` and `trip_kwh` (energy used on the road since the last stop). See `examples/school-buses.yaml`. |
 | `power_limit_kw`, `other_load_kw`, `energy_price_per_kwh` | one number, a list of 24 hourly values, or periods `{from, to, value}` (`price` or `kw` also work as the value name) |
 | `billing_days` | a one-day plan carries 1/30 of the monthly demand charge by default. Set it to 1 to count the full charge. |
-| `hours`, `time_limit_s` | plan length (default: until the last departure) and solver time limit (default 30 s) |
+| `hours`, `time_limit_s` | plan length (default: until the last departure) and time limit for the whole plan, explaining any shortfalls included (default 30 s) |
 | `shortfall_policy` | what to do when not every vehicle can be ready: `most_ready` (default) or `fair`. See "When not every vehicle can be ready" below. |
 
 **Times:** quotes around times are optional (`arrival: 17:30` works). A departure earlier than the arrival means the next day. Berth rounds each arrival up and each departure down to the time step, so a vehicle only charges in steps where it is parked the whole time.
@@ -134,7 +134,7 @@ Input error: my-vans.csv: line 3: battery_kwh 'eighty' is not a number
    1. *Readiness.* Every vehicle reaches its required level at departure. If that is impossible, the `shortfall_policy` decides (see point 6).
    2. *Cost.* Energy cost (price × grid energy in each step) plus the demand charge (rate × peak kW).
    3. *Tidy.* At the same lowest cost: a lower peak, and vehicles that leave first charge first, so each vehicle gets one block of charging where possible.
-4. **Solver.** It is a linear program, solved with the open-source [HiGHS](https://highs.dev) solver. When a step has more parked vehicles than chargers, Berth adds on/off variables for that step only, which makes it a mixed-integer program. For large cases it first solves an easier version and fixes the chargers a few hours at a time, then checks the answer against a proven lower bound. It stops when the cost is proven to be within 1 % of the lowest possible cost, or at the time limit; the result says which.
+4. **Solver.** It is a linear program, solved with the open-source [HiGHS](https://highs.dev) solver. When a step has more parked vehicles than chargers, Berth adds on/off variables for that step only, which makes it a mixed-integer program. For large cases it first solves an easier version and fixes the chargers a few hours at a time, then checks the answer against a proven lower bound. It stops when the cost is proven to be within 1 % of the lowest possible cost, or at the time limit; the result says which. If the time runs out before it finds anything better, the plan is the best one found so far, at worst charging on arrival.
 5. **Baseline.** "Charge on arrival" means every vehicle charges at full power from the moment it arrives until it is ready, first come first served for chargers and site power. The solver starts from this plan. So the Berth plan is never less ready than the baseline (with `most_ready`: never fewer vehicles fully ready; with `fair`: never a bigger shortfall that could be avoided), and, when the baseline gets everyone ready, never more expensive.
 6. **When not every vehicle can be ready,** Berth still returns the best partial plan. You choose how with `shortfall_policy`:
    * `most_ready` (default): a fleet manager first wants to know how many vehicles can run their routes. Berth gets as many vehicles **fully ready** as possible. Then, keeping that number, it makes the biggest shortfall of the other vehicles as small as possible, then their total shortfall, and only then looks at cost. It uses one on/off variable per vehicle to count the ready vehicles.
@@ -209,7 +209,7 @@ curl -s -X POST http://127.0.0.1:8000/api/explain -H "Content-Type: application/
 | `GET /api/examples`, `GET /api/examples/{name}` | the example fleets |
 | `POST /api/convert/...` | YAML to JSON, JSON to YAML, vehicle CSV to JSON (used by the web page) |
 
-Bad input gets status 422 (or 400) with a `problems` list that says what to fix. The API never opens a file name that comes in a request, and the solver time limit is capped at 60 s (`BERTH_MAX_TIME_LIMIT`).
+Bad input gets status 422 (or 400) with a `problems` list that says what to fix. The API never opens a file name that comes in a request, and the time limit is capped at 60 s (`BERTH_MAX_TIME_LIMIT`). The limit covers the whole request, so a plan comes back in about that time.
 
 ## MCP server
 
@@ -252,7 +252,7 @@ docker run --rm berth berth plan --example delivery-vans --no-csv    # command l
 * **Charging power is flat.** Real batteries charge slower when nearly full. Berth uses one `max_kw` per vehicle; set it a bit lower if your vehicles slow down a lot.
 * **Simple tariffs.** One price per time step, one demand charge per kW. No weekday/weekend tariffs, tiers or export prices yet.
 * **No vehicle priorities.** `most_ready` counts every vehicle the same. It does not know that one route matters more than another.
-* **Large, crowded sites can be slow.** Many vehicles sharing few chargers is a hard puzzle, and it is hardest when not everyone can be ready: with `most_ready`, each step after counting the ready vehicles gets a share of the time limit. Berth stops at the time limit and the result says so.
+* **Large, crowded sites can be slow.** Many vehicles sharing few chargers is a hard puzzle, and it is hardest when not everyone can be ready: with `most_ready`, each solver stage after counting the ready vehicles gets part of the time limit, and about a fifth of it is kept for explaining the shortfalls. Berth stops at the time limit and the result says so.
 * **No login.** The server listens on `127.0.0.1` by default. Add your own security before you share it.
 
 ## Next ideas

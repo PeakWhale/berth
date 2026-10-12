@@ -15,6 +15,7 @@ extra site kW, or the smallest number of extra chargers.
 from __future__ import annotations
 
 import math
+import time
 from dataclasses import dataclass, field
 
 from berth.evaluate import READY_TOL_KWH, Metrics
@@ -32,8 +33,10 @@ class Diagnosis:
     binding: list[str] = field(default_factory=list)
     extra_site_kw: float | None = None
     extra_chargers: int | None = None
+    extra_proven: bool = True  # False: the amounts are enough, but smaller ones may do
     extra_charger_kw: float | None = None
     both_needed: bool = False
+    unchecked: bool = False  # no time was left for the "what if" solves
     summary: list[str] = field(default_factory=list)
 
 
@@ -47,9 +50,11 @@ def _min_total_shortfall(prob: Problem, time_limit: float, **flags) -> float | N
 
 def _min_extra(
     prob: Problem, unavoidable: list[float], what: str, time_limit: float, other_limit: bool = True
-) -> float | None:
+) -> tuple[float, bool] | None:
     """Smallest extra site kW (or extra chargers) so that every vehicle gets
-    all it can. other_limit=False removes the other limit at the same time."""
+    all it can, and whether it is proven smallest (the solve may stop at its
+    time limit with a larger amount that is still enough). other_limit=False
+    removes the other limit at the same time."""
     model = ChargingModel(
         prob,
         extra_site=(what == "site"),
@@ -62,10 +67,29 @@ def _min_extra(
     r = model.m.solve({var: 1.0}, bounds=bounds, time_limit=time_limit, mip_gap=1e-3, abs_gap=0.5)
     if not r.has_solution:
         return None
-    return float(r.x[var])
+    return float(r.x[var]), r.optimal
 
 
-def diagnose(prob: Problem, metrics: Metrics, time_limit: float) -> Diagnosis | None:
+def _full_limits(prob: Problem, metrics: Metrics, short, unavoidable: dict) -> list[str]:
+    """Without "what if" solves: the limits that are full while a vehicle
+    that falls short (for more than lack of time) is parked."""
+    present = prob.present()
+    avail = prob.available_kw
+    site = chargers = False
+    for o in short:
+        if o.shortfall_kwh - unavoidable[(o.stop.vehicle_id, o.stop.number)] <= READY_TOL_KWH:
+            continue
+        for t in o.stop.steps:
+            site = site or metrics.total_kw[t] >= avail[t] - 1e-3
+            chargers = chargers or len(present[t]) > prob.total_chargers
+    found = [code for code, full in ((SITE, site), (CHARGERS, chargers)) if full]
+    return found or [SITE, CHARGERS]
+
+
+def diagnose(prob: Problem, metrics: Metrics, deadline: float) -> Diagnosis | None:
+    """`deadline` (time.perf_counter() seconds) is the end of the plan's
+    time limit. The "what if" solves only need rough answers: each gets at
+    most 5 s and what is left until the deadline, with a small floor."""
     short = [o for o in metrics.stops if not o.ready]
     if not short:
         return None
@@ -87,36 +111,47 @@ def diagnose(prob: Problem, metrics: Metrics, time_limit: float) -> Diagnosis | 
     total_short = sum(o.shortfall_kwh for o in metrics.stops)
     total_unavoidable = sum(unavoidable)
     avoidable = sum(max(0.0, o.shortfall_kwh - d.unavoidable_kwh[(o.stop.vehicle_id, o.stop.number)]) for o in short)
-    budget = min(5.0, max(2.0, time_limit / 4))  # per "what if" solve; these only need rough answers
+
+    def budget() -> float:  # for the next "what if" solve
+        return min(5.0, max(0.25, deadline - time.perf_counter()))
+
     if avoidable > READY_TOL_KWH:
         # A limit holds charging back if removing it lowers the smallest
         # possible total shortfall. Compare with that smallest total under all
         # limits, not with this plan's total: a plan that gets the most
         # vehicles ready (or shares the shortfall) can have a bigger total.
-        w_all = _min_total_shortfall(prob, budget)
+        w_all = _min_total_shortfall(prob, budget())
         ref = min(total_short, w_all) if w_all is not None else total_short
         margin = max(0.1, 0.002 * ref)  # the what-if solves are rough (small gaps)
-        w_site = _min_total_shortfall(prob, budget, site_limit=False)
-        w_chg = _min_total_shortfall(prob, budget, charger_limit=False)
-        if w_site is not None and w_site < ref - margin:
-            d.binding.append(SITE)
-        if w_chg is not None and w_chg < ref - margin:
-            d.binding.append(CHARGERS)
-        site_fixes = w_site is not None and w_site <= total_unavoidable + READY_TOL_KWH
-        chg_fixes = w_chg is not None and w_chg <= total_unavoidable + READY_TOL_KWH
-        if not (site_fixes or chg_fixes):
-            d.both_needed = True
-            d.binding = [SITE, CHARGERS]
+        w_site = _min_total_shortfall(prob, budget(), site_limit=False)
+        w_chg = _min_total_shortfall(prob, budget(), charger_limit=False)
+        site_fixes = chg_fixes = False
+        if w_site is None or w_chg is None:
+            # no time left for the "what if" solves: say which limits are full in this plan
+            d.unchecked = True
+            d.binding = _full_limits(prob, metrics, short, d.unavoidable_kwh)
+        else:
+            if w_site < ref - margin:
+                d.binding.append(SITE)
+            if w_chg < ref - margin:
+                d.binding.append(CHARGERS)
+            site_fixes = w_site <= total_unavoidable + READY_TOL_KWH
+            chg_fixes = w_chg <= total_unavoidable + READY_TOL_KWH
+            if not (site_fixes or chg_fixes):
+                d.both_needed = True
+                d.binding = [SITE, CHARGERS]
         # how much more is needed (with the other limit as it is, or, when
         # both are needed, with the other limit removed)
         if site_fixes or d.both_needed:
-            extra = _min_extra(prob, unavoidable, "site", budget, other_limit=not d.both_needed)
-            if extra is not None:
-                d.extra_site_kw = float(math.ceil(extra - 1e-6))
+            got = _min_extra(prob, unavoidable, "site", budget(), other_limit=not d.both_needed)
+            if got is not None:
+                d.extra_site_kw = float(math.ceil(got[0] - 1e-6))
+                d.extra_proven = d.extra_proven and got[1]
         if chg_fixes or d.both_needed:
-            extra = _min_extra(prob, unavoidable, "chargers", budget, other_limit=not d.both_needed)
-            if extra is not None:
-                d.extra_chargers = int(round(extra))
+            got = _min_extra(prob, unavoidable, "chargers", budget(), other_limit=not d.both_needed)
+            if got is not None:
+                d.extra_chargers = int(round(got[0]))
+                d.extra_proven = d.extra_proven and got[1]
                 d.extra_charger_kw = prob.max_charger_kw
 
     # 3. reasons per short stop, in plain words
@@ -176,13 +211,18 @@ def diagnose(prob: Problem, metrics: Metrics, time_limit: float) -> Diagnosis | 
             f"{', '.join(timed)}: not parked long enough to be ready even with unlimited site power "
             "and chargers. Move the departure later, plan an earlier arrival, or use a faster charger."
         )
+    if d.unchecked:
+        d.summary.append(
+            "Berth ran out of time before it could check what would help, so the reasons above only say which "
+            "limits are full in this plan. Raise time_limit_s for a closer look."
+        )
     if d.both_needed:
         d.summary.append("Neither more site power alone nor more chargers alone is enough: both hold charging back.")
         if d.extra_site_kw is not None:
-            d.summary.append(f"With enough chargers, about {d.extra_site_kw:g} kW more site capacity would be needed.")
+            d.summary.append(f"With enough chargers, about {d.extra_site_kw:g} kW more site capacity would be enough.")
         if d.extra_chargers is not None:
             d.summary.append(
-                f"With enough site power, {d.extra_chargers} more {d.extra_charger_kw:g} kW charger(s) would be needed."
+                f"With enough site power, {d.extra_chargers} more {d.extra_charger_kw:g} kW charger(s) would be enough."
             )
     else:
         if d.extra_site_kw is not None:
@@ -195,4 +235,6 @@ def diagnose(prob: Problem, metrics: Metrics, time_limit: float) -> Diagnosis | 
                 f"{d.extra_chargers} more {d.extra_charger_kw:g} kW charger(s) would be enough for every "
                 "vehicle that has enough time."
             )
+    if (d.extra_site_kw is not None or d.extra_chargers is not None) and not d.extra_proven:
+        d.summary.append("The solver ran out of time while working out these amounts, so less may be enough.")
     return d

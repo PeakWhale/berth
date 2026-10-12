@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 import numpy as np
@@ -10,7 +11,7 @@ from pydantic import ValidationError
 from berth.baseline import baseline_schedule
 from berth.diagnose import diagnose
 from berth.errors import BerthInputError, format_validation_error
-from berth.evaluate import Metrics, evaluate
+from berth.evaluate import READY_TOL_KWH, Metrics, evaluate
 from berth.models import SHORTFALL_POLICIES, Fleet
 from berth.optimizer import optimize
 from berth.problem import Problem, build_problem
@@ -47,30 +48,42 @@ def plan(
 ) -> PlanResult:
     """Plan charging for a fleet. Raises BerthInputError for bad input.
     `shortfall_policy` ("most_ready" or "fair") overrides the fleet's own."""
+    started = time.perf_counter()
     fleet = parse_fleet(fleet)
     if shortfall_policy is not None:
         fleet = with_policy(fleet, shortfall_policy)
     prob = build_problem(fleet)
     limit = time_limit if time_limit is not None else prob.time_limit_s
+    deadline = started + limit  # for everything, the diagnosis included
     base_power, base_assign = baseline_schedule(prob)
-    opt = optimize(prob, limit, baseline=(base_power, base_assign))
+    opt = optimize(prob, limit, baseline=(base_power, base_assign), deadline=deadline)
     m_opt = evaluate(prob, opt.power)
     m_base = evaluate(prob, base_power)
-    fallback = False
-    if prob.shortfall_policy == "most_ready" and m_opt.vehicles_ready < m_base.vehicles_ready:
-        # Should not happen (the solver starts from the baseline), but the
-        # promise is: never fewer vehicles ready than charging on arrival.
+    # Should not happen (the solver starts from the baseline), but the
+    # promises are: never less ready than charging on arrival, and never
+    # more expensive when charging on arrival gets everyone ready.
+    if m_base.all_ready:
+        fallback = not m_opt.all_ready or m_opt.total_cost > m_base.total_cost + 1e-6
+    elif prob.shortfall_policy == "most_ready":
+        fallback = m_opt.vehicles_ready < m_base.vehicles_ready
+    else:
+        fallback = _max_avoidable(prob, m_opt) > _max_avoidable(prob, m_base) + READY_TOL_KWH
+    if fallback:
         opt.power = base_power.copy()
         m_opt = m_base
-        fallback = True
-    diag = diagnose(prob, m_opt, limit) if not m_opt.all_ready else None
+    diag = diagnose(prob, m_opt, deadline) if not m_opt.all_ready else None
     result = _build_result(prob, opt, m_opt, base_power, m_base, diag)
     if fallback:
         result.notes.append(
-            "The solver found no plan with as many vehicles ready as charging on arrival in its time limit, "
-            "so this plan is charging on arrival. Raise time_limit_s to search longer."
+            "The solver found no better plan than charging on arrival in its time limit, so this plan is "
+            "charging on arrival. Raise time_limit_s to search longer."
         )
     return result
+
+
+def _max_avoidable(prob: Problem, m: Metrics) -> float:
+    """Biggest shortfall beyond what the vehicle could not get even alone."""
+    return max((o.shortfall_kwh - u for o, u in zip(m.stops, prob.unavoidable_kwh())), default=0.0)
 
 
 def with_policy(fleet: Fleet, policy: str) -> Fleet:

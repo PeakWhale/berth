@@ -27,6 +27,7 @@ class SolveResult:
     gap: float | None
     seconds: float
     nodes: int = 0
+    from_start: bool = False  # the solver did not improve on the starting plan, which is returned
 
 
 class LinearModel:
@@ -62,6 +63,41 @@ class LinearModel:
         self.row_start.append(len(self.row_index))
         self.row_lb.append(float(lb))
         self.row_ub.append(float(ub))
+
+    def feasible(
+        self,
+        x: np.ndarray,
+        bounds: dict[int, tuple[float, float]] | None = None,
+        extra_rows: list[tuple[list[int], list[float], float, float]] | None = None,
+        tol: float = 1e-6,
+    ) -> bool:
+        """True if x keeps every bound, integer and row (within tol)."""
+        x = np.asarray(x, dtype=float)
+        if len(x) != self.n_vars or not np.isfinite(x).all():
+            return False
+        lb = np.array(self.lb, dtype=float)
+        ub = np.array(self.ub, dtype=float)
+        for j, (lo, hi) in (bounds or {}).items():
+            lb[j], ub[j] = lo, hi
+        if (x < lb - tol).any() or (x > ub + tol).any():
+            return False
+        ints = np.array(self.integer, dtype=bool)
+        if ints.any() and (np.abs(x[ints] - np.round(x[ints])) > tol).any():
+            return False
+        counts = np.diff(np.array(self.row_start))
+        rows = np.repeat(np.arange(len(counts)), counts)
+        activity = np.bincount(rows, weights=np.array(self.row_value) * x[np.array(self.row_index, dtype=int)],
+                               minlength=len(counts))
+        lo = np.array(self.row_lb, dtype=float)
+        hi = np.array(self.row_ub, dtype=float)
+        slack = tol * np.maximum(1.0, np.abs(activity))
+        if (activity < lo - slack).any() or (activity > hi + slack).any():
+            return False
+        for idx, val, lo_, hi_ in extra_rows or []:
+            act = float(np.dot(val, x[idx])) if idx else 0.0
+            if act < lo_ - tol * max(1.0, abs(act)) or act > hi_ + tol * max(1.0, abs(act)):
+                return False
+        return True
 
     def solve(
         self,
@@ -135,7 +171,7 @@ class LinearModel:
 
         h = highspy.Highs()
         h.setOptionValue("output_flag", False)
-        h.setOptionValue("time_limit", float(max(time_limit, 0.5)))
+        h.setOptionValue("time_limit", float(max(time_limit, 0.01)))
         h.setOptionValue("mip_rel_gap", float(mip_gap))
         if abs_gap is not None:
             h.setOptionValue("mip_abs_gap", float(abs_gap))

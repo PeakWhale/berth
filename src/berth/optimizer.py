@@ -52,6 +52,7 @@ COST_GAP = 0.01  # stop when the cost is proven within 1 % of the lowest possibl
 # same from run to run on a busy or slow computer.
 TIDY_NODES = 20
 TIDY_SECONDS = 5.0
+DIAGNOSIS_SHARE = 0.2  # share of the time limit kept for explaining shortfalls
 
 
 def contested(prob: Problem, vehicles: list[int]) -> bool:
@@ -355,12 +356,16 @@ class OptimizeOutput:
 
 
 class _Stages:
-    """Runs the solve stages and keeps track of time, gaps and status."""
+    """Runs the solve stages and keeps track of time, gaps and status.
 
-    def __init__(self, model: ChargingModel, budget: float) -> None:
+    All stages share one deadline. A stage that runs out of time keeps its
+    starting plan (which is always valid), so a plan is returned on time."""
+
+    def __init__(self, model: ChargingModel, budget: float, deadline: float | None = None) -> None:
         self.model = model
         self.budget = budget
         self.started = time.perf_counter()
+        self.deadline = deadline if deadline is not None else self.started + budget
         self.optimal = True
         self.gap: float | None = None
         self.status = "optimal"
@@ -368,12 +373,17 @@ class _Stages:
         self.stage_end: float | None = None  # end of the current stage's time share
         self.neat = True  # tidy the rounded last hours (only worth it for the cost stage)
 
+    def left(self) -> float:
+        """Seconds left for the current stage (negative when late)."""
+        end = self.deadline if self.stage_end is None else min(self.deadline, self.stage_end)
+        return end - time.perf_counter()
+
     def remaining(self) -> float:
-        now = time.perf_counter()
-        left = self.budget - (now - self.started)
-        if self.stage_end is not None:
-            left = min(left, self.stage_end - now)
-        return max(1.0, left)
+        """Time limit for the next solve."""
+        return max(0.05, self.left())
+
+    def out_of_time(self) -> bool:
+        return self.left() <= 0.05
 
     def note(self, r: SolveResult) -> None:
         if not r.optimal:
@@ -385,10 +395,11 @@ class _Stages:
         """One stage. With on/off variables, first try "relax and fix" (see
         _relax_and_fix). If that is within the gap of the relaxation bound we
         are done, with a proven gap; otherwise run the full mixed-integer
-        solve, starting from the rounded plan when there is one. `time_cap`
-        limits the whole stage; with note=False stopping early is not
-        reported (for a stage whose exact answer is not needed). `neat`
-        tidies the rounded last hours (used for the cost stage)."""
+        solve, starting from the rounded plan when there is one. If the
+        solver finds nothing better than `start` in time, `start` is
+        returned. `time_cap` limits the whole stage; with note=False stopping
+        early is not reported (for a stage whose exact answer is not needed).
+        `neat` tidies the rounded last hours (used for the cost stage)."""
         self.stage_end = None if time_cap is None else time.perf_counter() + time_cap
         self.neat = neat
         try:
@@ -396,10 +407,21 @@ class _Stages:
         finally:
             self.stage_end = None
 
+    def _from_start(self, start: np.ndarray, value: float, status: str) -> SolveResult:
+        return SolveResult(has_solution=True, optimal=False, status=status, x=np.array(start, dtype=float),
+                           objective=value, gap=None, seconds=0.0, from_start=True)
+
     def _solve(self, objective, bounds, rows, gap, abs_gap, start, note) -> SolveResult:
         m = self.model.m
         self.last_fix = None
+        if start is not None and not m.feasible(start, bounds, rows):
+            start = None
         start_value = self.model.objective_value(objective, start) if start is not None else None
+        if start is not None and self.out_of_time():
+            r = self._from_start(start, start_value, "Time limit reached")
+            if note:
+                self.note(r)
+            return r
         if self.model.u_at and self.model.x_chg is None:
             got = self._relax_and_fix(objective, bounds, rows, gap, abs_gap)
             if got is not None:
@@ -408,11 +430,13 @@ class _Stages:
                     self.last_fix = fix
                     return fixed
                 if start_value is None or fixed.objective < start_value:
-                    start = fixed.x
-        if not m.n_integer:
-            start = None  # a linear program needs no start
+                    start, start_value = fixed.x, fixed.objective
         r = m.solve(objective, bounds=bounds, extra_rows=rows, time_limit=self.remaining(), mip_gap=gap,
                     abs_gap=abs_gap, start=start)
+        if start is not None and (
+            not r.has_solution or r.objective > start_value + 1e-9 * max(1.0, abs(start_value))
+        ):
+            r = self._from_start(start, start_value, r.status)
         if note:
             self.note(r)
         return r
@@ -437,6 +461,8 @@ class _Stages:
                         time_limit=self.remaining(), relax=True)
             return r, (g.x if g.has_solution else r.x)
 
+        if self.out_of_time():
+            return None
         t0 = time.perf_counter()
         lp, x0 = relaxed({})
         if lp is None:
@@ -465,6 +491,8 @@ class _Stages:
         fix: dict[int, tuple[float, float]] = {}
         starts = list(range(0, len(steps), chunk))
         for i in starts[:-1]:
+            if self.out_of_time():
+                return None
             if i > 0:
                 r, x = relaxed(fix)
                 if r is None:
@@ -488,7 +516,7 @@ class _Stages:
             if not exact.has_solution:
                 return None
             use = exact
-            if self.neat:
+            if self.neat and not self.out_of_time():
                 row = (list(objective), list(objective.values()), -INF,
                        exact.objective + max(1e-7 * abs(exact.objective), 1e-6))
                 neat = m.solve(tidy, bounds={**bounds, **fix}, extra_rows=rows + [row], mip_gap=1e-3,
@@ -514,6 +542,7 @@ def optimize(
     prob: Problem,
     time_limit: float | None = None,
     baseline: tuple[np.ndarray, dict[tuple[int, int], int]] | None = None,
+    deadline: float | None = None,
 ) -> OptimizeOutput:
     """Find the cheapest plan that gets every vehicle ready, or, if that is
     impossible, the plan that leaves the smallest shortfalls.
@@ -522,12 +551,16 @@ def optimize(
     it: even if the time limit stops the search, the plan is never less ready
     than the baseline (fewer vehicles fully ready with the most_ready
     policy, a bigger avoidable shortfall with the fair policy) and, when the
-    baseline gets everyone ready, never more expensive than the baseline."""
+    baseline gets everyone ready, never more expensive than the baseline.
+
+    `deadline` (time.perf_counter() seconds) ends the whole search; by
+    default it is time_limit seconds from now. When not everyone can be
+    ready, the search leaves DIAGNOSIS_SHARE of the time for diagnose()."""
     budget = float(time_limit if time_limit is not None else prob.time_limit_s)
     policy = prob.shortfall_policy
     model = ChargingModel(prob)
     m = model.m
-    run = _Stages(model, budget)
+    run = _Stages(model, budget, deadline)
     stages: list[str] = []
     if baseline is None:
         from berth.baseline import baseline_schedule
@@ -545,7 +578,12 @@ def optimize(
     trips = model.trips_made()
     quick = policy == "most_ready"
     cap = max(2.0, 0.2 * budget) if quick else None
-    r1 = run.solve({model.z: 1.0}, trips, [], gap=1e-4, abs_gap=0.01, start=x_base, time_cap=cap, note=False)
+    if x_base[model.z] <= TOL_KWH and m.feasible(x_base, trips):
+        # charging on arrival already gets everyone ready: nothing to solve
+        r1 = SolveResult(has_solution=True, optimal=True, status="Optimal", x=x_base.copy(),
+                         objective=float(x_base[model.z]), gap=None, seconds=0.0)
+    else:
+        r1 = run.solve({model.z: 1.0}, trips, [], gap=1e-4, abs_gap=0.01, start=x_base, time_cap=cap, note=False)
     if trips and not (r1.has_solution and r1.x[model.z] <= TOL_KWH):
         trips = {}
         if not (quick and r1.has_solution):  # most_ready: stage 1a below decides
@@ -555,14 +593,17 @@ def optimize(
                 r1 = again
     elif not quick:
         run.note(r1)
-    if not r1.has_solution:
+    if not r1.has_solution:  # should not happen: the baseline is a valid plan
         raise BerthSolverError(
-            f"the solver found no plan within {budget:g} s (status: {r1.status}). "
+            f"the solver found no plan in {time.perf_counter() - run.started:.1f} s (status: {r1.status}). "
             "Try a larger time step or a longer time limit."
         )
     best = r1
-    stages.append("readiness")
+    if not r1.from_start:
+        stages.append("readiness")
     z1 = max(0.0, float(r1.x[model.z]))
+    if z1 > TOL_KWH:  # someone will fall short: keep time to explain why
+        run.deadline -= DIAGNOSIS_SHARE * budget
     total_short = float(sum(r1.x[j] for j in model.s))
     rows: list = []
     ready_target: int | None = None
@@ -582,7 +623,8 @@ def optimize(
             ready_target = int(round(sum(float(r0.x[j]) for j in model.r)))
             rows = [(list(model.r), [1.0] * len(model.r), ready_target - 0.5, INF)]
             best = r0
-            stages.append("most vehicles ready")
+            if not r0.from_start:
+                stages.append("most vehicles ready")
             # Stage 1b: keeping that many ready, the smallest biggest-shortfall.
             # Proving the best answer here can take long (the count makes the
             # model harder), so 1b and 2 get a share of the time each.
@@ -605,22 +647,26 @@ def optimize(
                        time_cap=max(2.0, 0.15 * budget) if model.r else None)
         if r2.has_solution:
             best = r2
-            stages.append("total shortfall")
+            if not r2.from_start:
+                stages.append("total shortfall")
             total_short = float(sum(r2.x[j] for j in model.s))
             rows = rows + [(list(model.s), [1.0] * len(model.s), -INF, total_short + max(1e-3, 1e-6 * total_short))]
 
     # Stage 3: lowest cost with that readiness (start from the cheaper of
-    # the readiness plan and the baseline, when the baseline qualifies)
+    # the readiness plan and the baseline, when the baseline qualifies; if
+    # the solver finds nothing cheaper in time, that start is the plan)
     cost = model.cost_objective()
     start = best.x
-    base_ok = all(lo - 1e-9 <= x_base[j] <= hi + 1e-9 for j, (lo, hi) in bounds.items()) and not rows
+    base_ok = m.feasible(x_base, bounds, rows)
     if base_ok and model.objective_value(cost, x_base) < model.objective_value(cost, start):
         start = x_base
     r3 = run.solve(cost, bounds, rows, gap=COST_GAP, abs_gap=0.01, start=start, neat=True)
     gap = r3.gap
     if r3.has_solution:
         best = r3
-        stages.append("cost")
+        if not r3.from_start:
+            stages.append("cost")
+    if r3.has_solution and not run.out_of_time():
         # Stage 4: same cost, tidier schedule (lower peak, one block per vehicle)
         cost_now = sum(cost[j] * float(r3.x[j]) for j in cost)
         cost_row = (list(cost), list(cost.values()), -INF, cost_now + max(1e-4, 1e-7 * abs(cost_now)))
