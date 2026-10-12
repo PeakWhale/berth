@@ -211,14 +211,14 @@ def read_vehicles_csv(text: str, source: str = "vehicles.csv") -> list[dict]:
     missing = [c for c in VEHICLE_REQUIRED if c not in header]
     if missing:
         raise BerthInputError(
-            f"missing column(s): {', '.join(missing)}. Expected columns: "
+            f"missing {'column' if len(missing) == 1 else 'columns'}: {', '.join(missing)}. Expected columns: "
             f"{', '.join(VEHICLE_REQUIRED + VEHICLE_OPTIONAL)}",
             source,
         )
     unknown = [c for c in header if c not in VEHICLE_REQUIRED + VEHICLE_OPTIONAL]
     if unknown:
         raise BerthInputError(
-            f"unknown column(s): {', '.join(unknown)}. Known columns: "
+            f"unknown {'column' if len(unknown) == 1 else 'columns'}: {', '.join(unknown)}. Known columns: "
             f"{', '.join(VEHICLE_REQUIRED + VEHICLE_OPTIONAL)}",
             source,
         )
@@ -296,7 +296,9 @@ def read_tariff_csv(text: str, source: str = "tariff.csv") -> dict:
             prices[int(hour)] = _number(row[price_col], price_col, line, source)
         missing = [h for h in range(24) if h not in prices]
         if missing:
-            raise BerthInputError(f"no price for hour(s): {', '.join(map(str, missing))}", source)
+            raise BerthInputError(
+                f"no price for {'hour' if len(missing) == 1 else 'hours'}: {', '.join(map(str, missing))}", source
+            )
         profile: Any = [prices[h] for h in range(24)]
     elif "from" in header and "to" in header:
         profile = []

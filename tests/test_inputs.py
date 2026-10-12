@@ -347,7 +347,7 @@ def test_vehicles_csv_single_and_multi_stop():
 def test_vehicles_csv_errors_are_clear():
     with pytest.raises(BerthInputError) as e:
         read_vehicles_csv("id,battery_kwh,arrival\nV1,80,18:00\n", "v.csv")
-    assert "missing column(s): max_kw, departure, required_soc_pct" in str(e.value)
+    assert "missing columns: max_kw, departure, required_soc_pct" in str(e.value)
     with pytest.raises(BerthInputError) as e:
         read_vehicles_csv(
             "id,battery_kwh,max_kw,arrival,departure,arrival_soc_pct,required_soc_pct\nV1,abc,11,18:00,06:00,20,90\n",

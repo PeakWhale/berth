@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 from berth.evaluate import READY_TOL_KWH, Metrics
 from berth.optimizer import ChargingModel
 from berth.problem import Problem
+from berth.report import how_many_short, plural
 
 TIME, SITE, CHARGERS = "not_enough_time", "site_limit", "too_few_chargers"
 
@@ -193,9 +194,10 @@ def diagnose(prob: Problem, metrics: Metrics, deadline: float) -> Diagnosis | No
             if CHARGERS in d.binding:
                 codes.append(CHARGERS)
                 if crowd > prob.total_chargers:
+                    n = prob.total_chargers
                     text.append(
                         f"Too few chargers: up to {crowd} vehicles are parked at the same time, "
-                        f"but there are only {prob.total_chargers} chargers."
+                        f"but there {'is' if n == 1 else 'are'} only {plural(n, 'charger')}."
                     )
                 else:
                     text.append(
@@ -208,7 +210,7 @@ def diagnose(prob: Problem, metrics: Metrics, deadline: float) -> Diagnosis | No
     # 4. fleet summary
     n_short = len({o.stop.vehicle_id for o in short})
     d.summary.append(
-        f"{n_short} of {len(prob.vehicles)} vehicles cannot be fully ready; "
+        f"{how_many_short(n_short, len(prob.vehicles))} be fully ready; "
         f"{sum(o.shortfall_kwh for o in short):.1f} kWh are missing in total."
     )
     timed = sorted({k[0] for k, u in d.unavoidable_kwh.items() if u > READY_TOL_KWH})
@@ -228,7 +230,8 @@ def diagnose(prob: Problem, metrics: Metrics, deadline: float) -> Diagnosis | No
             d.summary.append(f"With enough chargers, about {d.extra_site_kw:g} kW more site capacity would be enough.")
         if d.extra_chargers is not None:
             d.summary.append(
-                f"With enough site power, {d.extra_chargers} more {d.extra_charger_kw:g} kW charger(s) would be enough."
+                f"With enough site power, {plural(d.extra_chargers, f'more {d.extra_charger_kw:g} kW charger')} "
+                "would be enough."
             )
     else:
         if d.extra_site_kw is not None:
@@ -238,7 +241,7 @@ def diagnose(prob: Problem, metrics: Metrics, deadline: float) -> Diagnosis | No
             )
         if d.extra_chargers is not None:
             d.summary.append(
-                f"{d.extra_chargers} more {d.extra_charger_kw:g} kW charger(s) would be enough for every "
+                f"{plural(d.extra_chargers, f'more {d.extra_charger_kw:g} kW charger')} would be enough for every "
                 "vehicle that has enough time."
             )
     if (d.extra_site_kw is not None or d.extra_chargers is not None) and not d.extra_proven:

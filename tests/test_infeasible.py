@@ -21,7 +21,7 @@ def test_not_enough_time_is_reported_with_kwh():
     fleet = make_fleet([van(1, arrival="20:00", departure="21:00")])
     r = plan(fleet)
     assert not r.all_ready
-    assert r.headline.startswith("1 of 1 vehicles cannot be fully ready")
+    assert r.headline.startswith("The vehicle cannot be fully ready")
     (item,) = r.shortfalls
     assert item.vehicle_id == "V1"
     assert item.shortfall_kwh == pytest.approx(56 - 11, abs=0.01)

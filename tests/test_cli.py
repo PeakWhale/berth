@@ -77,6 +77,22 @@ def test_explain_and_examples(capsys):
     assert "school-buses" in capsys.readouterr().out
 
 
+def test_text_output_wording():
+    from berth.planner import plan
+    from berth.report import explain, summary_text
+
+    from conftest import make_fleet, van
+
+    # one charger, one vehicle that cannot make it in time
+    r = plan(make_fleet([van(1, arrival="20:00", departure="21:00"), van(2)], chargers=[{"count": 1, "kw": 22}]))
+    text = summary_text(r) + "\n" + explain(r)
+    assert "V1 (leaves 21:00)" in text  # no "stop 1" for a vehicle with one stop
+    assert "at most 1 vehicle charges at once" in text
+    assert "(s)" not in text and "1 vehicles" not in text and "1 chargers" not in text
+    assert plan(make_fleet([van(1), van(2)])).headline.startswith("Both vehicles will be ready.")
+    assert plan(make_fleet([van(1)])).headline.startswith("The vehicle will be ready.")
+
+
 def test_shortfall_policy_flag(capsys):
     assert main(["plan", "--example", "late-shift-infeasible", "--no-csv", "--shortfall-policy", "fair"]) == 0
     out = capsys.readouterr().out

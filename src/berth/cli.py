@@ -36,7 +36,7 @@ def _add_input_args(p: argparse.ArgumentParser) -> None:
     g.add_argument("--demand-charge", type=_number, metavar="RATE", help="demand charge per kW of monthly peak")
     g.add_argument("--efficiency", type=_number, default=1.0, help="charging efficiency, 0.5 to 1 (default 1)")
     g.add_argument("--name", default=None, help="name for this plan")
-    o = p.add_argument_group("options")
+    o = p.add_argument_group("plan options")
     o.add_argument("--start", help="plan start, HH:MM or date and time (default: earliest arrival)")
     o.add_argument("--hours", type=_number, help="plan length in hours (default: until the last departure)")
     o.add_argument("--step", type=int, metavar="MIN", help="time step in minutes (default 15)")
@@ -70,8 +70,9 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("examples", help="list the bundled example fleets")
 
     s = sub.add_parser("serve", help="start the web page and HTTP API")
-    s.add_argument("--host", default="127.0.0.1")
-    s.add_argument("--port", type=int, default=8000)
+    s.add_argument("--host", default="127.0.0.1",
+                   help="address to listen on (default 127.0.0.1, this computer only; 0.0.0.0 for all)")
+    s.add_argument("--port", type=int, default=8000, help="port to listen on (default 8000)")
     return parser
 
 

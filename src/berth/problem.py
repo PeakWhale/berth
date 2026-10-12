@@ -15,6 +15,7 @@ import numpy as np
 
 from berth.errors import BerthInputError
 from berth.models import Fleet, profile_value
+from berth.report import plural
 from berth.timeutil import MINUTES_PER_DAY, clock_label, parse_time
 
 MAX_HOURS = 168
@@ -393,7 +394,7 @@ def build_problem(fleet: Fleet) -> Problem:
         t0 = blocked[0]
         notes.append(
             f"At {label(t0 * step)} the other building load ({other[t0]:g} kW) uses the whole site limit "
-            f"({limit[t0]:g} kW), so no charging is possible in {len(blocked)} time step(s)."
+            f"({limit[t0]:g} kW), so no charging is possible in {plural(len(blocked), 'time step')}."
         )
 
     chargers = sorted(((g.count, g.kw) for g in fleet.site.chargers), key=lambda c: -c[1])

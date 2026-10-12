@@ -15,7 +15,7 @@ from berth.evaluate import READY_TOL_KWH, Metrics, evaluate
 from berth.models import SHORTFALL_POLICIES, Fleet
 from berth.optimizer import optimize
 from berth.problem import Problem, build_problem
-from berth.report import money
+from berth.report import how_many_short, money, plural
 from berth.results import (
     ChargingWindow,
     DiagnosisResult,
@@ -210,11 +210,13 @@ def _build_result(prob, opt, m_opt: Metrics, base_power, m_base: Metrics, diag) 
 
     V = len(prob.vehicles)
     if m_opt.all_ready:
-        head = "The vehicle will be ready. " if V == 1 else f"All {V} vehicles will be ready. "
+        head = {1: "The vehicle will be ready. ", 2: "Both vehicles will be ready. "}.get(
+            V, f"All {V} vehicles will be ready. "
+        )
     else:
         n_short = V - m_opt.vehicles_ready
         head = (
-            f"{n_short} of {V} vehicles cannot be fully ready ({m_opt.shortfall_kwh:.1f} kWh short); "
+            f"{how_many_short(n_short, V)} be fully ready ({m_opt.shortfall_kwh:.1f} kWh short); "
             "this is the best partial plan. "
         )
     head += (
@@ -227,7 +229,8 @@ def _build_result(prob, opt, m_opt: Metrics, base_power, m_base: Metrics, diag) 
 
     notes = list(prob.notes)
     notes.append(
-        f"Chargers: in each time step at most {prob.total_chargers} vehicles charge at once "
+        f"Chargers: in each time step at most {plural(prob.total_chargers, 'vehicle')} "
+        f"{'charges' if prob.total_chargers == 1 else 'charge'} at once "
         "(and at most the number of chargers in each power group). Berth does not pick the exact "
         "charger; if vehicles share chargers, someone has to move the plugs between time steps."
     )
@@ -257,7 +260,7 @@ def _build_result(prob, opt, m_opt: Metrics, base_power, m_base: Metrics, diag) 
     if not m_base.all_ready:
         worst = m_base.worst
         text = (
-            f"Charging on arrival leaves {V - m_base.vehicles_ready} vehicle(s) short "
+            f"Charging on arrival leaves {plural(V - m_base.vehicles_ready, 'vehicle')} short "
             f"(biggest shortfall {worst.shortfall_kwh:.1f} kWh, {worst.stop.vehicle_id})"
         )
         if m_base.grid_kwh < m_opt.grid_kwh - 0.05:
@@ -297,7 +300,7 @@ def _build_result(prob, opt, m_opt: Metrics, base_power, m_base: Metrics, diag) 
         )
     if opt.contested_steps:
         notes.append(
-            f"There are more parked vehicles than chargers in {opt.contested_steps} time step(s), "
+            f"There are more parked vehicles than chargers in {plural(opt.contested_steps, 'time step')}, "
             "so the plan also decides which vehicles charge in those steps."
         )
 

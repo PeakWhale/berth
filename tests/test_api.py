@@ -69,7 +69,7 @@ def test_schedule_csv_and_explain(client):
     assert csv.headers["content-type"].startswith("text/csv")
     assert csv.text.splitlines()[0].endswith("V1_kw,V2_kw")
     text = client.post("/api/explain", json=fleet).text
-    assert "All 2 vehicles will be ready" in text
+    assert "Both vehicles will be ready" in text
 
 
 def test_validation_errors_are_clear(client):

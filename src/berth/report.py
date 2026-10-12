@@ -13,6 +13,18 @@ if TYPE_CHECKING:
 SYMBOLS = {"USD": "$", "EUR": "€", "GBP": "£", "INR": "₹", "JPY": "¥", "AUD": "A$", "CAD": "C$"}
 
 
+def plural(n: int, word: str, many: str | None = None) -> str:
+    """'1 charger', '3 chargers' (many: the plural when it is not word + 's')."""
+    return f"{n} {word if n == 1 else (many or word + 's')}"
+
+
+def how_many_short(n_short: int, total: int) -> str:
+    """'The vehicle cannot', '1 of 3 vehicles cannot', ..."""
+    if total == 1:
+        return "The vehicle cannot"
+    return f"{n_short} of {total} vehicles cannot"
+
+
 def money(x: float, currency: str = "USD") -> str:
     sym = SYMBOLS.get(currency.upper())
     sign = "-" if x < -0.005 else ""
@@ -92,8 +104,10 @@ def summary_text(r: "PlanResult", max_vehicles: int = 40) -> str:
         out.append("")
         out.append("Vehicles that fall short:")
         out.append(f"  ({policy_text(r)})")
+        stops = {v.id: len(v.stops) for v in r.vehicles}
         for item in r.shortfalls:
-            out.append(f"  {item.vehicle_id} (stop {item.stop}, leaves {item.departure}): {item.shortfall_kwh:.1f} kWh short")
+            where = f"stop {item.stop}, leaves" if stops.get(item.vehicle_id, 1) > 1 else "leaves"
+            out.append(f"  {item.vehicle_id} ({where} {item.departure}): {item.shortfall_kwh:.1f} kWh short")
             for reason in item.reasons:
                 out.append(f"      - {reason}")
         if r.diagnosis:
@@ -121,6 +135,11 @@ def span(start: str, end: str) -> str:
         if start.endswith(suffix) and end.endswith(suffix):
             return f"{start.removesuffix(suffix)}-{end}"
     return f"{start}-{end}"
+
+
+def kwh_text(x: float) -> str:
+    """Whole kWh, but one decimal below 1 kWh (so a small window does not read '0 kWh')."""
+    return f"{x:.1f} kWh" if x < 0.95 else f"{x:.0f} kWh"
 
 
 def _short(text: str, n: int) -> str:
@@ -187,7 +206,7 @@ def explain(r: "PlanResult", max_vehicles: int = 15) -> str:
     lines.append("")
     lines.append("Vehicles:")
     for v in r.vehicles[:max_vehicles]:
-        win = ", ".join(f"{span(w.start, w.end)} ({w.kwh:.0f} kWh)" for w in v.windows) or "no charging needed"
+        win = ", ".join(f"{span(w.start, w.end)} ({kwh_text(w.kwh)})" for w in v.windows) or "no charging needed"
         last = v.stops[-1]
         status = (
             f"ready with {last.departure_soc_pct:.0f}% at {last.departure}"
