@@ -1,7 +1,7 @@
 <p><img src="berth.svg" width="64" height="64" alt="Berth logo"></p>
 
 # PeakWhale™ Berth
-### Every vehicle ready on time, at the lowest charging cost.
+### Plan depot charging so vehicles leave ready, at the lowest cost it can find.
 
 ![Python](https://img.shields.io/badge/Python-3.11%2B-blue)
 ![Solver](https://img.shields.io/badge/Solver-HiGHS-informational)
@@ -9,7 +9,7 @@
 ![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-green)
 [![CI](https://github.com/PeakWhale/berth/actions/workflows/ci.yml/badge.svg)](https://github.com/PeakWhale/berth/actions/workflows/ci.yml)
 
-**PeakWhale™ Berth** is a free, open-source planner for charging an electric fleet at a depot. You tell it when each vehicle arrives and leaves, how full the battery is and how full it must be, what chargers you have, how much power the site can take, and what electricity costs. Berth gives back a charging schedule for every vehicle, in 15-minute steps, that gets every vehicle ready at the lowest cost. It also shows what would happen if every vehicle just charged at full power on arrival.
+**PeakWhale™ Berth** is a free, open-source planner for charging an electric fleet at a depot. You tell it when each vehicle arrives and leaves, how full the battery is and how full it must be, what chargers you have, how much power the site can take, and what electricity costs. Berth gives back a charging schedule for every vehicle, in 15-minute steps. When every vehicle can be ready, the schedule gets them all ready at the lowest cost it can find (proven within 1 % of the lowest possible, unless the time limit stops it first). When not, it says which vehicles fall short, by how much, and why. It also shows what would happen if every vehicle just charged at full power on arrival.
 
 * **Command line:** `berth plan fleet.yaml` prints a summary and writes the schedule as CSV.
 * **Web page and HTTP API:** upload or edit a fleet, see the power chart, download the plan. OpenAPI docs at `/docs`.

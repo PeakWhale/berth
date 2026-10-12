@@ -1,7 +1,7 @@
 [project]
 name = "peakwhale-berth"
 version = "0.1.0"
-description = "Free EV fleet charging planner: meet every departure at the lowest energy and demand cost, within your chargers and site power limit."
+description = "Free EV fleet charging planner: get vehicles ready for departure at low energy and demand cost, within your chargers and site power limit."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"

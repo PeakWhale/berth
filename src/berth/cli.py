@@ -52,7 +52,7 @@ def _add_input_args(p: argparse.ArgumentParser) -> None:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="berth",
-        description="PeakWhale Berth: plan EV fleet charging so every vehicle is ready at the lowest cost.",
+        description="PeakWhale Berth: plan EV fleet charging so vehicles leave ready, at low cost.",
     )
     parser.add_argument("--version", action="version", version=f"berth {__version__}")
     sub = parser.add_subparsers(dest="command", metavar="COMMAND")
