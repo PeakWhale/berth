@@ -96,6 +96,21 @@ def test_yaml_errors_are_clear(client):
     assert "not valid YAML" in res.json()["error"]
 
 
+@pytest.mark.parametrize("path", ["/api/plan", "/api/explain", "/api/schedule.csv", "/api/plan/yaml"])
+def test_large_requests_are_refused(client, path):
+    big = b'{"name": "' + b"a" * 2_100_000 + b'"}'
+    res = client.post(path, content=big, headers={"Content-Type": "application/json"})
+    assert res.status_code == 413
+    assert "too large" in res.json()["error"]
+
+    def chunks():  # no Content-Length: counted while reading
+        for _ in range(30):
+            yield b"a" * 100_000
+
+    res = client.post(path, content=chunks(), headers={"Content-Type": "application/json"})
+    assert res.status_code == 413
+
+
 def test_api_does_not_read_server_files(client):
     text = (EXAMPLES / "delivery-vans.yaml").read_text()  # has "tariff: tariff-tou.yaml"
     res = client.post("/api/plan/yaml", content=text, headers={"Content-Type": "text/plain"})

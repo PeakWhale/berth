@@ -15,6 +15,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from berth import __version__
 from berth.errors import BerthInputError, BerthSolverError, format_error_list
@@ -43,7 +44,58 @@ app = FastAPI(
 )
 
 
+# ---- request size -------------------------------------------------------------
+
+
+class _TooLarge(StarletteHTTPException):
+    def __init__(self) -> None:
+        super().__init__(status_code=413, detail=_too_large_text())
+
+
+def _too_large_text() -> str:
+    return f"the request is too large (more than {MAX_BODY_BYTES // 1_000_000} MB)"
+
+
+class _BodyLimit:
+    """Refuse request bodies over MAX_BODY_BYTES on every route: at once when
+    Content-Length says so, otherwise as soon as more has been read."""
+
+    def __init__(self, app, limit: int) -> None:
+        self.app = app
+        self.limit = limit
+
+    async def __call__(self, scope, receive, send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        for name, value in scope.get("headers", []):
+            if name == b"content-length" and value.isdigit() and int(value) > self.limit:
+                text = _too_large_text()
+                await JSONResponse(status_code=413, content={"error": text, "problems": [text]})(scope, receive, send)
+                return
+        seen = 0
+
+        async def limited_receive():
+            nonlocal seen
+            message = await receive()
+            if message["type"] == "http.request":
+                seen += len(message.get("body", b""))
+                if seen > self.limit:
+                    raise _TooLarge()
+            return message
+
+        await self.app(scope, limited_receive, send)
+
+
+app.add_middleware(_BodyLimit, limit=MAX_BODY_BYTES)
+
+
 # ---- errors ---------------------------------------------------------------
+
+
+@app.exception_handler(_TooLarge)
+async def _too_large(_: Request, exc: _TooLarge) -> JSONResponse:
+    return JSONResponse(status_code=413, content={"error": exc.detail, "problems": [exc.detail]})
 
 
 @app.exception_handler(BerthInputError)
@@ -129,7 +181,7 @@ async def plan_yaml(
 ) -> PlanResult:
     """Plan charging for a fleet given as YAML (or JSON) text, like the files in examples/.
     A tariff must be included in the text (not a file name)."""
-    fleet = load_fleet_text(await _text(request), "request")
+    fleet = await run_in_threadpool(load_fleet_text, await _text(request), "request")
     return await run_in_threadpool(plan, _capped(fleet, shortfall_policy))
 
 
@@ -155,7 +207,7 @@ def schedule(
 @app.post("/api/convert/from-yaml", tags=["convert"], openapi_extra=TEXT_BODY)
 async def from_yaml(request: Request) -> dict:
     """Check fleet YAML text and return it as JSON."""
-    fleet = load_fleet_text(await _text(request), "request")
+    fleet = await run_in_threadpool(load_fleet_text, await _text(request), "request")
     return fleet.model_dump(by_alias=True, exclude_none=True)
 
 
@@ -168,7 +220,11 @@ def to_yaml(fleet: Fleet) -> PlainTextResponse:
 @app.post("/api/convert/vehicles-csv", tags=["convert"], openapi_extra=TEXT_BODY)
 async def vehicles_csv(request: Request) -> list[dict]:
     """Read a vehicles CSV (one row per stop) and return the vehicles as JSON."""
-    rows = read_vehicles_csv(await _text(request), "vehicles CSV")
+    return await run_in_threadpool(_vehicles_from_csv, await _text(request))
+
+
+def _vehicles_from_csv(text: str) -> list[dict]:
+    rows = read_vehicles_csv(text, "vehicles CSV")
     out = []
     for i, row in enumerate(rows):
         try:
