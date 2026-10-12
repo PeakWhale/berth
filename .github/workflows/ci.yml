@@ -34,4 +34,4 @@ jobs:
       - name: Build image
         run: docker build -t berth .
       - name: Plan an example inside the image
-        run: docker run --rm berth berth plan --example delivery-vans --no-csv
+        run: docker run --rm berth berth plan --example delivery-vans

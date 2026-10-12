@@ -241,8 +241,11 @@ If the client cannot find `uv`, use its full path (see `which uv`). Then ask, fo
 
 ```bash
 docker build -t berth .
-docker run --rm -p 8000:8000 berth                                   # web page and API on http://localhost:8000
-docker run --rm berth berth plan --example delivery-vans --no-csv    # command line
+docker run --rm -p 8000:8000 berth                           # web page and API on http://localhost:8000
+docker run --rm berth berth plan --example delivery-vans     # command line
+
+# plan your own fleet file: mount the folder it is in; the schedule CSV is written next to it
+docker run --rm -v "$PWD:/data" --user "$(id -u):$(id -g)" berth berth plan fleet.yaml
 ```
 
 ## Limits

@@ -1,7 +1,8 @@
 # PeakWhale Berth: web page, HTTP API and command line in one image.
 #   docker build -t berth .
 #   docker run --rm -p 8000:8000 berth            # then open http://localhost:8000
-#   docker run --rm berth berth plan --example delivery-vans --no-csv
+#   docker run --rm berth berth plan --example delivery-vans
+#   docker run --rm -v "$PWD:/data" --user "$(id -u):$(id -g)" berth berth plan fleet.yaml
 # Another Python base image: docker build --build-arg PYTHON_IMAGE=python:3.13-slim -t berth .
 ARG PYTHON_IMAGE=python:3.12-slim
 FROM ${PYTHON_IMAGE}
@@ -21,8 +22,11 @@ COPY examples ./examples
 RUN uv sync --frozen --no-dev --no-editable
 
 ENV PATH="/app/.venv/bin:$PATH"
-RUN useradd --create-home berth
+# Commands run in /data, a folder the berth user can write to (the schedule
+# CSV goes there). Mount your own folder there to plan your own fleet files.
+RUN useradd --create-home berth && mkdir /data && chown berth /data
 USER berth
+WORKDIR /data
 
 EXPOSE 8000
 CMD ["berth", "serve", "--host", "0.0.0.0", "--port", "8000"]
