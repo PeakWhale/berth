@@ -291,6 +291,17 @@ def test_examples_load_and_round_trip_through_yaml():
         assert load_fleet_text(fleet_to_yaml(fleet)) == fleet
 
 
+@pytest.mark.parametrize(
+    "name, description",
+    [("Depot\tNorth", "line one\nline two"), ("A\u2028B", "x\x85y"), (".5", "+1"), ("yes", "back\\slash")],
+)
+def test_yaml_output_quotes_special_text(name, description):
+    fleet = load_example("delivery-vans").model_copy(update={"name": name, "description": description})
+    back = load_fleet_text(fleet_to_yaml(fleet))
+    assert (back.name, back.description) == (name, description)
+    assert back == fleet
+
+
 def test_csv_example_matches_yaml_example():
     yaml_fleet = load_fleet_file(EXAMPLES / "delivery-vans.yaml")
     rows = read_vehicles_csv((EXAMPLES / "csv" / "vans.csv").read_text(), "vans.csv")

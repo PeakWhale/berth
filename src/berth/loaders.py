@@ -299,14 +299,20 @@ def parse_chargers(spec: str) -> list[dict]:
 # Writing YAML
 
 
+# Text that must be quoted in YAML: special characters, control characters
+# (newline, tab, ...) and the line breaks YAML 1.1 knows besides newline.
+_NEEDS_QUOTES = re.compile(r"[:#{}\[\],&*?|<>=!%@`'\"\\]|[\x00-\x1f\x7f-\x9f\u2028\u2029\ufeff]|^\s|\s$|^[-\d.+]")
+
+
 def _scalar(v: Any) -> str:
     if isinstance(v, bool):
         return "true" if v else "false"
     if isinstance(v, (int, float)):
         return f"{v:g}" if isinstance(v, float) else str(v)
     text = str(v)
-    return json.dumps(text) if text == "" or re.search(r"[:#{}\[\],&*?|<>=!%@`'\"]|^\s|\s$|^[-\d]", text) or text.lower() in {
-        "true", "false", "yes", "no", "on", "off", "null", "~"} else text
+    plain = text != "" and not _NEEDS_QUOTES.search(text) and text.lower() not in {
+        "true", "false", "yes", "no", "on", "off", "null", "~", "y", "n"}
+    return text if plain else json.dumps(text)
 
 
 def _flow(v: Any) -> str:
