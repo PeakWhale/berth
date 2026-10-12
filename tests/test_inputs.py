@@ -98,6 +98,16 @@ def test_tariff_periods_must_cover_the_day_without_overlap():
     assert "overlap at 11:00" in problems_of(e)
 
 
+def test_whole_day_period():
+    fleet = make_fleet([van(1)])
+    fleet["site"]["power_limit_kw"] = [{"from": "00:00", "to": "24:00", "kw": 100}]
+    prob = build_problem(parse_fleet(fleet))
+    assert (prob.limit_kw == 100).all()
+    fleet["site"]["power_limit_kw"] = [{"from": "07:00", "to": "07:00", "kw": 100}]
+    with pytest.raises(BerthInputError, match="same start and end"):
+        parse_fleet(fleet)
+
+
 def test_hourly_list_needs_24_values():
     fleet = make_fleet([van(1)])
     fleet["tariff"]["energy_price_per_kwh"] = [0.1] * 23

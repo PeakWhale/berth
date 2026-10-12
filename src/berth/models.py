@@ -64,11 +64,14 @@ class Period(BaseModel):
 
     @model_validator(mode="after")
     def _not_empty(self) -> "Period":
-        if parse_clock(self.start) == parse_clock(self.end, allow_24=True) % MINUTES_PER_DAY:
+        # 00:00 to 24:00 is the whole day; 07:00 to 07:00 is unclear
+        if parse_clock(self.start) == parse_clock(self.end, allow_24=True):
             raise ValueError(f"period {self.start} to {self.end} has the same start and end")
         return self
 
     def minutes(self) -> tuple[int, int]:
+        """(start, end) in minutes after midnight. end <= start means the
+        period wraps past midnight; 00:00 to 24:00 gives (0, 0), the whole day."""
         return parse_clock(self.start), parse_clock(self.end, allow_24=True) % MINUTES_PER_DAY
 
 
