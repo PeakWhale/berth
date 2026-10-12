@@ -89,11 +89,18 @@ def diagnose(prob: Problem, metrics: Metrics, time_limit: float) -> Diagnosis | 
     avoidable = sum(max(0.0, o.shortfall_kwh - d.unavoidable_kwh[(o.stop.vehicle_id, o.stop.number)]) for o in short)
     budget = min(5.0, max(2.0, time_limit / 4))  # per "what if" solve; these only need rough answers
     if avoidable > READY_TOL_KWH:
+        # A limit holds charging back if removing it lowers the smallest
+        # possible total shortfall. Compare with that smallest total under all
+        # limits, not with this plan's total: a plan that gets the most
+        # vehicles ready (or shares the shortfall) can have a bigger total.
+        w_all = _min_total_shortfall(prob, budget)
+        ref = min(total_short, w_all) if w_all is not None else total_short
+        margin = max(0.1, 0.002 * ref)  # the what-if solves are rough (small gaps)
         w_site = _min_total_shortfall(prob, budget, site_limit=False)
         w_chg = _min_total_shortfall(prob, budget, charger_limit=False)
-        if w_site is not None and w_site < total_short - READY_TOL_KWH:
+        if w_site is not None and w_site < ref - margin:
             d.binding.append(SITE)
-        if w_chg is not None and w_chg < total_short - READY_TOL_KWH:
+        if w_chg is not None and w_chg < ref - margin:
             d.binding.append(CHARGERS)
         site_fixes = w_site is not None and w_site <= total_unavoidable + READY_TOL_KWH
         chg_fixes = w_chg is not None and w_chg <= total_unavoidable + READY_TOL_KWH
