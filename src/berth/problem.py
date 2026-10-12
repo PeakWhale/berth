@@ -107,9 +107,44 @@ class Problem:
         energy = veh.arrival_kwh
         out = []
         for s in veh.stops:
-            energy -= s.trip_kwh
+            energy = arrival_level(energy, s.trip_kwh)
             energy = min(veh.battery_kwh, energy + self.efficiency * self.dt * rate * len(s.steps))
             out.append(energy)
+        return out
+
+    def min_level_kwh(self, v: int) -> list[float]:
+        """Battery level at each departure if this vehicle never charged."""
+        energy = self.vehicles[v].arrival_kwh
+        out = []
+        for s in self.vehicles[v].stops:
+            energy = arrival_level(energy, s.trip_kwh)
+            out.append(energy)
+        return out
+
+    def trip_modes(self) -> list[str]:
+        """Per stop (in order), how the battery level at arrival follows from
+        the level at the previous departure. The level cannot go below 0: a
+        vehicle that leaves with less than the next trip needs arrives empty.
+          "first":  the first stop (the arrival level is given);
+          "carry":  the vehicle always has enough for the trip, so the level
+                    is the previous level minus the trip;
+          "empty":  even charging alone at full power it never has enough
+                    for the trip, so it always arrives empty;
+          "choose": it depends on the plan (the optimizer decides with an
+                    on/off variable)."""
+        out: list[str] = []
+        for v, veh in enumerate(self.vehicles):
+            most = self.alone_max_kwh(v)
+            least = self.min_level_kwh(v)
+            for i, s in enumerate(veh.stops):
+                if i == 0:
+                    out.append("first")
+                elif least[i - 1] - s.trip_kwh >= -1e-9:
+                    out.append("carry")
+                elif most[i - 1] - s.trip_kwh <= 1e-9:
+                    out.append("empty")
+                else:
+                    out.append("choose")
         return out
 
     def unavoidable_kwh(self) -> list[float]:
@@ -128,6 +163,12 @@ class Problem:
                 for t in s.steps:
                     out[t].append(v)
         return out
+
+
+def arrival_level(previous_kwh: float, trip_kwh: float) -> float:
+    """Battery level when a vehicle arrives: the level it left with minus the
+    trip, but never below empty (a vehicle that runs out arrives empty)."""
+    return max(0.0, previous_kwh - trip_kwh)
 
 
 def build_problem(fleet: Fleet) -> Problem:

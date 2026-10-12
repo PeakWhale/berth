@@ -113,6 +113,33 @@ def short_fleet(seed: int) -> dict:
     return f
 
 
+def multi_stop_fleet(seed: int) -> dict:
+    """Random small fleets of vehicles with a midday stop and a night stop,
+    where the trip between them is sometimes more than they can get."""
+    rng = random.Random(2000 + seed)
+    vehicles = []
+    for i in range(rng.randint(2, 5)):
+        battery = rng.choice([60, 100, 150])
+        a1 = rng.randrange(8 * 60, 11 * 60, 15)
+        d1 = a1 + rng.choice([30, 60, 120, 240])
+        vehicles.append({
+            "id": f"B{i}",
+            "battery_kwh": battery,
+            "max_kw": rng.choice([11, 22, 50]),
+            "arrival_soc_pct": rng.randint(5, 60),
+            "stops": [
+                {"arrival": f"{a1 // 60:02d}:{a1 % 60:02d}", "departure": f"{d1 // 60:02d}:{d1 % 60:02d}",
+                 "required_soc_pct": rng.choice([0, 30, 60])},
+                {"arrival": "17:00", "departure": "06:00", "required_soc_pct": rng.choice([70, 90]),
+                 "trip_kwh": round(battery * rng.uniform(0.2, 0.8), 1)},
+            ],
+        })
+    f = make_fleet(vehicles, power_limit_kw=rng.choice([20, 40, 200]), chargers=[{"count": rng.randint(1, 5), "kw": 22}])
+    f["start"] = "08:00"
+    f["shortfall_policy"] = rng.choice(["most_ready", "fair"])
+    return f
+
+
 def solve(fleet: dict, time_limit: float | None = None):
     """Build, optimize and evaluate. Returns (problem, opt output, metrics, baseline metrics)."""
     prob = build_problem(Fleet.model_validate(fleet))

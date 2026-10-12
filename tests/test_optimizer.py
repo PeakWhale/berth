@@ -12,7 +12,7 @@ from berth.optimizer import optimize
 from berth.evaluate import evaluate
 from berth.baseline import baseline_power
 
-from conftest import EXAMPLES, assert_valid, make_fleet, random_fleet, solve, van
+from conftest import EXAMPLES, assert_valid, make_fleet, multi_stop_fleet, random_fleet, solve, van
 
 
 def test_every_vehicle_reaches_required_level():
@@ -128,6 +128,63 @@ def test_multi_stop_vehicle_trip_energy():
     assert second.departure_kwh >= 180 - 0.01
 
 
+def _bus(arrival_soc_pct, first_stop):
+    return {
+        "id": "BUS",
+        "battery_kwh": 60,
+        "max_kw": 11,
+        "arrival_soc_pct": arrival_soc_pct,
+        "stops": [
+            {"arrival": first_stop[0], "departure": first_stop[1], "required_soc_pct": 0},
+            {"arrival": "18:00", "departure": "06:00", "required_soc_pct": 90, "trip_kwh": 50},
+        ],
+    }
+
+
+def _levels(prob, power):
+    """Battery level at each departure, computed by hand: never below empty."""
+    out = []
+    for v, veh in enumerate(prob.vehicles):
+        level = veh.arrival_kwh
+        for s in veh.stops:
+            level = max(0.0, level - s.trip_kwh) + prob.efficiency * prob.dt * power[v, s.a : s.d].sum()
+            out.append(level)
+    return out
+
+
+def test_vehicle_that_cannot_make_its_trip_arrives_empty():
+    # 30 minutes at 11 kW cannot give the 50 kWh trip: the bus arrives empty,
+    # so the night stop needs 54 kWh (90 %), not 54 kWh plus what it lacked
+    fleet = make_fleet([_bus(10, ("08:00", "08:30"))], chargers=[{"count": 2, "kw": 11}])
+    fleet["start"] = "08:00"
+    prob, opt, m, _ = solve(fleet)
+    assert_valid(prob, opt.power)
+    first, second = m.stops
+    assert not first.ready and second.ready
+    night = prob.efficiency * prob.dt * opt.power[0, second.stop.a : second.stop.d].sum()
+    assert night == pytest.approx(54, abs=0.01)  # never more than the battery holds
+    assert [o.departure_kwh for o in m.stops] == pytest.approx(_levels(prob, opt.power))
+
+
+@pytest.mark.parametrize("policy", ["most_ready", "fair"])
+def test_running_out_does_not_take_power_from_others(policy):
+    # the site gives 8 kW at night (96 kWh): the empty bus needs 54, the van 42
+    van_ = {"id": "VAN", "battery_kwh": 60, "max_kw": 11, "arrival": "18:00", "departure": "06:00",
+            "arrival_soc_pct": 20, "required_soc_pct": 90}
+    for first_stop, other_load in [
+        (("08:00", "08:30"), 0),  # the bus can never make its trip
+        (("08:00", "12:00"), [{"from": "08:00", "to": "12:00", "kw": 6}, {"from": "12:00", "to": "08:00", "kw": 0}]),
+    ]:  # the second time the bus could make it alone, but the site gives it too little
+        fleet = make_fleet([_bus(10 if other_load == 0 else 50, first_stop), van_], power_limit_kw=8,
+                           other_load_kw=other_load, chargers=[{"count": 2, "kw": 11}])
+        fleet["start"] = "08:00"
+        fleet["shortfall_policy"] = policy
+        prob, opt, m, _ = solve(fleet)
+        assert_valid(prob, opt.power)
+        assert [o.ready for o in m.stops] == [False, True, True]
+        assert [o.departure_kwh for o in m.stops] == pytest.approx(_levels(prob, opt.power))
+
+
 def test_demand_charge_flattens_peak():
     vehicles = [van(i, max_kw=22, battery_kwh=100, arrival_soc_pct=10) for i in range(4)]
     fleet = make_fleet(vehicles, power_limit_kw=200)
@@ -150,6 +207,18 @@ def test_random_fleets_valid_and_not_worse_than_baseline(seed):
     assert_valid(prob, baseline_power(prob))
     # never fewer vehicles ready than charging on arrival (default policy most_ready)
     assert m.vehicles_ready >= base.vehicles_ready
+    if base.all_ready:
+        assert m.all_ready
+        assert m.total_cost <= base.total_cost + 1e-6
+
+
+@pytest.mark.parametrize("seed", range(8))
+def test_random_multi_stop_fleets(seed):
+    prob, opt, m, base = solve(multi_stop_fleet(seed), time_limit=10)
+    assert_valid(prob, opt.power)
+    assert [o.departure_kwh for o in m.stops] == pytest.approx(_levels(prob, opt.power))
+    if prob.shortfall_policy == "most_ready":
+        assert m.vehicles_ready >= base.vehicles_ready
     if base.all_ready:
         assert m.all_ready
         assert m.total_cost <= base.total_cost + 1e-6

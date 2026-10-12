@@ -6,7 +6,9 @@ Limits:
   * a vehicle charges only while it is parked;
   * power <= the vehicle's max rate and <= the fastest charger;
   * all charging together <= site limit minus other building load;
-  * the battery never goes above 100 %;
+  * the battery never goes above 100 % and never below empty: a vehicle
+    that leaves with less than its next trip needs arrives empty (where
+    that depends on the plan, an on/off variable per stop decides);
   * chargers: in each time step at most N vehicles can charge, and at most
     `count` of them on each charger group (with its kW). Berth does not track
     which exact charger a vehicle uses. If a step has more parked vehicles
@@ -39,7 +41,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from berth.errors import BerthSolverError
-from berth.problem import Problem
+from berth.problem import Problem, arrival_level
 from berth.solver import INF, LinearModel, SolveResult
 
 TOL_KWH = 1e-3
@@ -100,18 +102,40 @@ class ChargingModel:
         self.z = m.var(0.0, INF)
         self.r: list[int] = []  # vehicle ready on/off variables (most_ready policy only)
 
-        # energy: battery level at each departure
+        # energy: battery level at each departure, written as `base` plus
+        # sum(vals * cols). The level at an arrival is the previous level
+        # minus the trip, but never below empty (see Problem.trip_modes).
         coef = prob.efficiency * prob.dt
+        self.modes = prob.trip_modes()
+        self.arrive: dict[int, tuple[int, int]] = {}  # stop -> (arrival level e, on/off b), "choose" stops only
         k = 0
         for v, veh in enumerate(prob.vehicles):
-            cum: list[int] = []
+            cols: list[int] = []
+            vals: list[float] = []
             base = veh.arrival_kwh
             for s in veh.stops:
-                cum = cum + [self.p[(v, t)] for t in s.steps]
-                base -= s.trip_kwh
-                n = len(cum)
-                m.row(cum, [coef] * n, -INF, veh.battery_kwh - base)  # never above 100 %
-                m.row(cum + [self.s[k]], [coef] * n + [1.0], s.required_kwh - base, INF)  # ready (or short)
+                mode = self.modes[k]
+                if mode == "carry":
+                    base -= s.trip_kwh
+                elif mode == "empty":
+                    cols, vals, base = [], [], 0.0
+                elif mode == "choose":
+                    # e = max(0, x) with x = previous level - trip: b = 1 means
+                    # it had enough for the trip (e = x), b = 0 that it ran out (e = 0)
+                    big = veh.battery_kwh
+                    e = m.var(0.0, big)
+                    b = m.var(0.0, 1.0, integer=True)
+                    neg = [-c for c in vals]
+                    m.row([e] + cols, [1.0] + neg, base - s.trip_kwh, INF)  # e >= x
+                    m.row([e] + cols + [b], [1.0] + neg + [big], -INF, base - s.trip_kwh + big)  # e <= x if b = 1
+                    m.row([e, b], [1.0, -big], -INF, 0.0)  # e = 0 if b = 0
+                    self.arrive[k] = (e, b)
+                    cols, vals, base = [e], [1.0], 0.0
+                here = [self.p[(v, t)] for t in s.steps]
+                cols = cols + here
+                vals = vals + [coef] * len(here)
+                m.row(cols, vals, -INF, veh.battery_kwh - base)  # never above 100 %
+                m.row(cols + [self.s[k]], vals + [1.0], s.required_kwh - base, INF)  # ready (or short)
                 m.row([self.s[k], self.z], [1.0, -1.0], -INF, self.unavoidable[k])
                 k += 1
 
@@ -176,19 +200,24 @@ class ChargingModel:
         prob, m = self.prob, self.m
         self.r = []
         k = 0
-        for veh in prob.vehicles:
+        for v, veh in enumerate(prob.vehicles):
             n = len(veh.stops)
             can = all(u <= READY_KWH for u in self.unavoidable[k : k + n])
             r = m.var(0.0, 1.0 if can else 0.0, integer=True)
-            base = veh.arrival_kwh
+            least = prob.min_level_kwh(v)
             for i, st in enumerate(veh.stops):
-                base -= st.trip_kwh
-                big = max(0.0, st.required_kwh - base)  # largest possible shortfall at this stop
+                big = max(0.0, st.required_kwh - least[i])  # largest possible shortfall at this stop
                 if big > READY_KWH:
                     # ready (r = 1): shortfall <= READY_KWH; not ready: no limit
                     m.row([self.s[k + i], r], [1.0, big], -INF, big + READY_KWH)
             self.r.append(r)
             k += n
+
+    def trips_made(self) -> dict[int, tuple[float, float]]:
+        """Bounds that say: every vehicle has enough for each trip after a
+        stop where it can be ready (only stops where this is not certain
+        have a variable for it)."""
+        return {b: (1.0, 1.0) for k, (_, b) in self.arrive.items() if self.unavoidable[k - 1] <= READY_KWH}
 
     def assign_from(self, x: np.ndarray) -> dict[tuple[int, int], int]:
         """Charger group used by each vehicle in each busy step, read from a solution."""
@@ -268,12 +297,14 @@ class ChargingModel:
         k = 0
         z = 0.0
         for v, veh in enumerate(prob.vehicles):
-            base = veh.arrival_kwh
-            charged = 0.0
+            level = veh.arrival_kwh
             for st in veh.stops:
-                base -= st.trip_kwh
-                charged += coef * float(power[v, st.a : st.d].sum())
-                short = max(0.0, st.required_kwh - base - charged)
+                if k in self.arrive:
+                    e, b = self.arrive[k]
+                    x[e] = arrival_level(level, st.trip_kwh)
+                    x[b] = 1.0 if level - st.trip_kwh >= -1e-9 else 0.0
+                level = arrival_level(level, st.trip_kwh) + coef * float(power[v, st.a : st.d].sum())
+                short = max(0.0, st.required_kwh - level)
                 x[self.s[k]] = short
                 z = max(z, short - self.unavoidable[k])
                 k += 1
@@ -344,7 +375,7 @@ class _Stages:
             left = min(left, self.stage_end - now)
         return max(1.0, left)
 
-    def _note(self, r: SolveResult) -> None:
+    def note(self, r: SolveResult) -> None:
         if not r.optimal:
             self.optimal = False
             self.status = f"stopped early ({r.status})"
@@ -383,7 +414,7 @@ class _Stages:
         r = m.solve(objective, bounds=bounds, extra_rows=rows, time_limit=self.remaining(), mip_gap=gap,
                     abs_gap=abs_gap, start=start)
         if note:
-            self._note(r)
+            self.note(r)
         return r
 
     def _relax_and_fix(self, objective, bounds, rows, gap, abs_gap):
@@ -507,9 +538,23 @@ def optimize(
     # Stage 1: smallest biggest-shortfall. With most_ready this only has to
     # tell whether every vehicle that has time can be ready (z = 0), so it
     # gets a share of the time; if it cannot tell, stage 1a below decides.
+    # A vehicle that is ready at a stop has enough for the next trip, so when
+    # everyone can be ready no vehicle runs out on the road. Try that first:
+    # it keeps the model easy. Only if not everyone can be ready may a
+    # vehicle run out (see ChargingModel.arrive).
+    trips = model.trips_made()
     quick = policy == "most_ready"
-    r1 = run.solve({model.z: 1.0}, {}, [], gap=1e-4, abs_gap=0.01, start=x_base,
-                   time_cap=max(2.0, 0.2 * budget) if quick else None, note=not quick)
+    cap = max(2.0, 0.2 * budget) if quick else None
+    r1 = run.solve({model.z: 1.0}, trips, [], gap=1e-4, abs_gap=0.01, start=x_base, time_cap=cap, note=False)
+    if trips and not (r1.has_solution and r1.x[model.z] <= TOL_KWH):
+        trips = {}
+        if not (quick and r1.has_solution):  # most_ready: stage 1a below decides
+            again = run.solve({model.z: 1.0}, {}, [], gap=1e-4, abs_gap=0.01,
+                              start=r1.x if r1.has_solution else x_base, time_cap=cap, note=not quick)
+            if again.has_solution:
+                r1 = again
+    elif not quick:
+        run.note(r1)
     if not r1.has_solution:
         raise BerthSolverError(
             f"the solver found no plan within {budget:g} s (status: {r1.status}). "
@@ -551,6 +596,7 @@ def optimize(
     if z1 <= TOL_KWH:
         bounds = {j: (0.0, u + TOL_KWH) for j, u in zip(model.s, model.unavoidable)}
         bounds[model.z] = (0.0, TOL_KWH)
+        bounds.update(trips)
         total_short = float(sum(model.unavoidable))
     else:
         bounds = {model.z: (0.0, z1 + max(1e-4, 1e-6 * z1))}
@@ -580,6 +626,7 @@ def optimize(
         cost_row = (list(cost), list(cost.values()), -INF, cost_now + max(1e-4, 1e-7 * abs(cost_now)))
         tidy = model.tidy_objective()
         keep = {j: (float(round(r3.x[j])),) * 2 for j in model.r}  # same vehicles ready
+        keep.update({b: (float(round(r3.x[b])),) * 2 for _, b in model.arrive.values()})  # same trips made
         if run.last_fix is not None:  # chargers already fixed: tidy as a linear program
             r4 = m.solve(tidy, bounds={**bounds, **keep, **run.last_fix}, extra_rows=rows + [cost_row],
                          time_limit=run.remaining())

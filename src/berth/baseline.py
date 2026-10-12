@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from berth.problem import Problem, StopData
+from berth.problem import Problem, StopData, arrival_level
 
 
 def baseline_power(prob: Problem) -> np.ndarray:
@@ -43,7 +43,7 @@ def baseline_schedule(prob: Problem) -> tuple[np.ndarray, dict[tuple[int, int], 
                 continue
             while trips_applied[v] < s.number:  # entering a new stop: subtract trips on the way
                 trips_applied[v] += 1
-                energy[v] -= veh.stops[trips_applied[v] - 1].trip_kwh
+                energy[v] = arrival_level(energy[v], veh.stops[trips_applied[v] - 1].trip_kwh)
             if s.required_kwh - energy[v] > 1e-9:
                 waiting.append((s.arrival_min, v, s))
         waiting.sort(key=lambda w: (w[0], w[1]))

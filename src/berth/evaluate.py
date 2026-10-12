@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from berth.problem import Problem, StopData
+from berth.problem import Problem, StopData, arrival_level
 
 READY_TOL_KWH = 0.01
 
@@ -80,7 +80,7 @@ def evaluate(prob: Problem, power: np.ndarray) -> Metrics:
         energy = veh.arrival_kwh
         ok = True
         for s in veh.stops:
-            energy -= s.trip_kwh
+            energy = arrival_level(energy, s.trip_kwh)
             energy += prob.efficiency * prob.dt * float(power[v, s.a : s.d].sum())
             short = max(0.0, s.required_kwh - energy)
             o = StopOutcome(stop=s, battery_kwh=veh.battery_kwh, departure_kwh=energy, shortfall_kwh=short)
@@ -124,7 +124,7 @@ def find_violations(prob: Problem, power: np.ndarray, tol: float = 1e-3) -> list
                 out.append(f"{veh.id} charges at {p:.2f} kW, above the fastest charger, at {prob.labels[t]}")
         energy = veh.arrival_kwh
         for s in veh.stops:
-            energy -= s.trip_kwh
+            energy = arrival_level(energy, s.trip_kwh)
             energy += prob.efficiency * prob.dt * float(power[v, s.a : s.d].sum())
             if energy > veh.battery_kwh + tol:
                 out.append(f"{veh.id} goes above 100% battery at stop {s.number}")
