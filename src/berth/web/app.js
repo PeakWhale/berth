@@ -66,11 +66,15 @@ async function loadExamples() {
   return list;
 }
 
+let loadTicket = 0; // only the latest "load example" may fill the editor
+
 async function loadExample() {
   clearError();
   const name = $("example").value;
   if (!name) return;
+  const ticket = ++loadTicket;
   const text = await api(`/api/examples/${encodeURIComponent(name)}?format=yaml`);
+  if (ticket !== loadTicket) return;
   $("editor").value = text;
   save(text);
 }
@@ -168,18 +172,28 @@ function renderShort(r) {
   box.hidden = false;
 }
 
+// "00:45 +1d" to "03:15 +1d" -> "00:45-03:15 +1d" (same day suffix written once)
+function span(start, end) {
+  const m1 = /^(.*?)(\s\+\d+d)?$/.exec(start);
+  const m2 = /^(.*?)(\s\+\d+d)?$/.exec(end);
+  if ((m1[2] || "") === (m2[2] || "")) return `${m1[1]}\u2013${m2[1]}${m1[2] || ""}`;
+  return `${start} \u2013 ${end}`;
+}
+
 function renderVehicles(r) {
-  const head = "<thead><tr><th>Vehicle</th><th>Stop</th><th>Arrive</th><th>Leave</th><th class='num'>Need</th>"
-    + "<th class='num'>Plan</th><th>Ready</th><th>Charging (Berth)</th><th class='num'>Charge on arrival</th></tr></thead>";
+  const multi = r.vehicles.some((v) => v.stops.length > 1);
+  const head = "<thead><tr><th>Vehicle</th>" + (multi ? "<th>Stop</th>" : "") + "<th>Arrive</th><th>Leave</th><th class='num'>Need</th>"
+    + "<th class='num'>Plan</th><th>Ready</th><th>Charging (Berth)</th>"
+    + "<th class='num' title='Battery level at departure when every vehicle charges at full power on arrival'>On arrival</th></tr></thead>";
   const rows = [];
   r.vehicles.forEach((v, i) => {
     v.stops.forEach((st, k) => {
       const first = k === 0;
-      const windows = first ? (v.windows.map((w) => `${esc(w.start)} to ${esc(w.end)} (${w.kwh.toFixed(0)} kWh)`).join("<br>") || "none needed") : "";
+      const windows = first ? (v.windows.map((w) => `${esc(span(w.start, w.end))} (${w.kwh.toFixed(w.kwh < 1 ? 1 : 0)}&nbsp;kWh)`).join("<br>") || "none needed") : "";
       rows.push(
         "<tr>"
         + `<td>${first ? `<span class="dot" style="background:${vehicleColor(i)}"></span>${esc(v.id)}` : ""}</td>`
-        + `<td>${v.stops.length > 1 ? st.stop : ""}</td>`
+        + (multi ? `<td>${v.stops.length > 1 ? st.stop : ""}</td>` : "")
         + `<td>${esc(st.arrival)}</td><td>${esc(st.departure)}</td>`
         + `<td class="num">${st.required_soc_pct.toFixed(0)}%</td>`
         + `<td class="num">${st.departure_soc_pct.toFixed(0)}%</td>`
