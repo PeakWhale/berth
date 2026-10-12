@@ -15,11 +15,15 @@ Limits:
     chargers, the model stays a fast linear program.
 
 Goal, in order:
-  1. readiness: make the biggest shortfall (kWh missing at a departure) as
-     small as possible, then make the total shortfall as small as possible;
-     when every vehicle can be ready both are zero. A vehicle that is not
-     parked long enough gets as much as it can take, and the part it can
-     never get does not count against the others;
+  1. readiness. When every vehicle can be ready, it is. When not:
+       - shortfall_policy "most_ready" (default): first get as many vehicles
+         fully ready as possible (an on/off variable per vehicle counts
+         them), then, keeping that number, make the biggest shortfall (kWh
+         missing at a departure) as small as possible, then the total;
+       - shortfall_policy "fair": make the biggest shortfall as small as
+         possible over all vehicles, then the total.
+     A vehicle that is not parked long enough gets as much as it can take,
+     and the part it can never get does not count against the others;
   2. cost: energy cost (price x energy) plus demand charge (rate x peak kW);
   3. tidy: keep the cost at its lowest value and, among plans with that
      cost, prefer a lower peak and let the vehicles that leave first charge
@@ -39,6 +43,7 @@ from berth.problem import Problem
 from berth.solver import INF, LinearModel, SolveResult
 
 TOL_KWH = 1e-3
+READY_KWH = 0.005  # a stop counts as ready in the model when at most this short (reports use 0.01)
 COST_GAP = 0.01  # stop when the cost is proven within 1 % of the lowest possible
 # The tidy step only makes the schedule neater at the same cost, so it gets a
 # small search. A node limit (not only a time limit) keeps the result the
@@ -93,6 +98,7 @@ class ChargingModel:
         self.unavoidable = prob.unavoidable_kwh()
         self.s: list[int] = [m.var(0.0, INF) for _ in prob.stops]
         self.z = m.var(0.0, INF)
+        self.r: list[int] = []  # vehicle ready on/off variables (most_ready policy only)
 
         # energy: battery level at each departure
         coef = prob.efficiency * prob.dt
@@ -162,6 +168,42 @@ class ChargingModel:
                         m.row(cols + [self.x_chg], [1.0] * len(cols) + [-1.0], -INF, float(count))
                     elif len(cols) > count:
                         m.row(cols, [1.0] * len(cols), -INF, float(count))
+
+    def add_ready_vars(self) -> None:
+        """One on/off variable per vehicle: 1 means it is ready at every stop.
+        Used by the most_ready policy to count ready vehicles. A vehicle that
+        can never be ready (not parked long enough) is fixed at 0."""
+        prob, m = self.prob, self.m
+        self.r = []
+        k = 0
+        for veh in prob.vehicles:
+            n = len(veh.stops)
+            can = all(u <= READY_KWH for u in self.unavoidable[k : k + n])
+            r = m.var(0.0, 1.0 if can else 0.0, integer=True)
+            base = veh.arrival_kwh
+            for i, st in enumerate(veh.stops):
+                base -= st.trip_kwh
+                big = max(0.0, st.required_kwh - base)  # largest possible shortfall at this stop
+                if big > READY_KWH:
+                    # ready (r = 1): shortfall <= READY_KWH; not ready: no limit
+                    m.row([self.s[k + i], r], [1.0, big], -INF, big + READY_KWH)
+            self.r.append(r)
+            k += n
+
+    def assign_from(self, x: np.ndarray) -> dict[tuple[int, int], int]:
+        """Charger group used by each vehicle in each busy step, read from a solution."""
+        out: dict[tuple[int, int], int] = {}
+        for t, entries in self.u_at.items():
+            for v, us in entries:
+                for g, u in enumerate(us):
+                    if x[u] > 0.5:
+                        out[(v, t)] = g
+        return out
+
+    def complete(self, x: np.ndarray) -> np.ndarray:
+        """A full, consistent variable vector for the schedule in x (used after
+        variables were added to the model)."""
+        return self.vector_from(self.power(x), self.assign_from(x))
 
     # ---- objectives -----------------------------------------------------------
     def cost_objective(self) -> dict[int, float]:
@@ -236,6 +278,13 @@ class ChargingModel:
                 z = max(z, short - self.unavoidable[k])
                 k += 1
         x[self.z] = max(0.0, z)
+        k = 0
+        for v, veh in enumerate(prob.vehicles):
+            n = len(veh.stops)
+            if self.r:
+                ok = all(x[self.s[k + i]] <= READY_KWH for i in range(n)) and self.m.ub[self.r[v]] > 0.5
+                x[self.r[v]] = 1.0 if ok else 0.0
+            k += n
         x[self.peak] = max(float(prob.other_kw.max()), float((prob.other_kw + power.sum(axis=0)).max()))
         for t, entries in self.u_at.items():
             for v, us in entries:
@@ -270,6 +319,8 @@ class OptimizeOutput:
     max_shortfall_kwh: float
     total_shortfall_kwh: float
     contested_steps: int
+    policy: str = "most_ready"
+    ready_target: int | None = None  # most_ready: vehicles the plan gets fully ready (None if not needed)
 
 
 class _Stages:
@@ -283,20 +334,38 @@ class _Stages:
         self.gap: float | None = None
         self.status = "optimal"
         self.last_fix: dict | None = None
+        self.stage_end: float | None = None  # end of the current stage's time share
+        self.neat = True  # tidy the rounded last hours (only worth it for the cost stage)
 
     def remaining(self) -> float:
-        return max(1.0, self.budget - (time.perf_counter() - self.started))
+        now = time.perf_counter()
+        left = self.budget - (now - self.started)
+        if self.stage_end is not None:
+            left = min(left, self.stage_end - now)
+        return max(1.0, left)
 
     def _note(self, r: SolveResult) -> None:
         if not r.optimal:
             self.optimal = False
             self.status = f"stopped early ({r.status})"
 
-    def solve(self, objective, bounds, rows, gap: float, abs_gap: float, start=None) -> SolveResult:
+    def solve(self, objective, bounds, rows, gap: float, abs_gap: float, start=None,
+              time_cap: float | None = None, note: bool = True, neat: bool = False) -> SolveResult:
         """One stage. With on/off variables, first try "relax and fix" (see
         _relax_and_fix). If that is within the gap of the relaxation bound we
         are done, with a proven gap; otherwise run the full mixed-integer
-        solve, starting from the rounded plan when there is one."""
+        solve, starting from the rounded plan when there is one. `time_cap`
+        limits the whole stage; with note=False stopping early is not
+        reported (for a stage whose exact answer is not needed). `neat`
+        tidies the rounded last hours (used for the cost stage)."""
+        self.stage_end = None if time_cap is None else time.perf_counter() + time_cap
+        self.neat = neat
+        try:
+            return self._solve(objective, bounds, rows, gap, abs_gap, start, note)
+        finally:
+            self.stage_end = None
+
+    def _solve(self, objective, bounds, rows, gap, abs_gap, start, note) -> SolveResult:
         m = self.model.m
         self.last_fix = None
         start_value = self.model.objective_value(objective, start) if start is not None else None
@@ -309,11 +378,12 @@ class _Stages:
                     return fixed
                 if start_value is None or fixed.objective < start_value:
                     start = fixed.x
-        if not self.model.u_at:
+        if not m.n_integer:
             start = None  # a linear program needs no start
         r = m.solve(objective, bounds=bounds, extra_rows=rows, time_limit=self.remaining(), mip_gap=gap,
                     abs_gap=abs_gap, start=start)
-        self._note(r)
+        if note:
+            self._note(r)
         return r
 
     def _relax_and_fix(self, objective, bounds, rows, gap, abs_gap):
@@ -386,11 +456,15 @@ class _Stages:
                             time_limit=self.remaining(), mip_gap=gap, abs_gap=abs_gap)
             if not exact.has_solution:
                 return None
-            row = (list(objective), list(objective.values()), -INF,
-                   exact.objective + max(1e-7 * abs(exact.objective), 1e-6))
-            neat = m.solve(tidy, bounds={**bounds, **fix}, extra_rows=rows + [row], mip_gap=1e-3,
-                           max_nodes=TIDY_NODES, time_limit=min(self.remaining(), TIDY_SECONDS), start=exact.x)
-            use = neat if neat.has_solution else exact
+            use = exact
+            if self.neat:
+                row = (list(objective), list(objective.values()), -INF,
+                       exact.objective + max(1e-7 * abs(exact.objective), 1e-6))
+                neat = m.solve(tidy, bounds={**bounds, **fix}, extra_rows=rows + [row], mip_gap=1e-3,
+                               max_nodes=TIDY_NODES, time_limit=min(self.remaining(), TIDY_SECONDS),
+                               start=exact.x)
+                if neat.has_solution:
+                    use = neat
             for t in last:
                 for _, us in self.model.u_at[t]:
                     for u in us:
@@ -415,9 +489,11 @@ def optimize(
 
     The charge-on-arrival baseline is a valid plan, so the solver starts from
     it: even if the time limit stops the search, the plan is never less ready
-    (biggest shortfall) and, when the baseline gets everyone ready, never
-    more expensive than the baseline."""
+    than the baseline (fewer vehicles fully ready with the most_ready
+    policy, a bigger avoidable shortfall with the fair policy) and, when the
+    baseline gets everyone ready, never more expensive than the baseline."""
     budget = float(time_limit if time_limit is not None else prob.time_limit_s)
+    policy = prob.shortfall_policy
     model = ChargingModel(prob)
     m = model.m
     run = _Stages(model, budget)
@@ -428,8 +504,12 @@ def optimize(
         baseline = baseline_schedule(prob)
     x_base = model.vector_from(*baseline)
 
-    # Stage 1: smallest biggest-shortfall
-    r1 = run.solve({model.z: 1.0}, {}, [], gap=1e-4, abs_gap=0.01, start=x_base)
+    # Stage 1: smallest biggest-shortfall. With most_ready this only has to
+    # tell whether every vehicle that has time can be ready (z = 0), so it
+    # gets a share of the time; if it cannot tell, stage 1a below decides.
+    quick = policy == "most_ready"
+    r1 = run.solve({model.z: 1.0}, {}, [], gap=1e-4, abs_gap=0.01, start=x_base,
+                   time_cap=max(2.0, 0.2 * budget) if quick else None, note=not quick)
     if not r1.has_solution:
         raise BerthSolverError(
             f"the solver found no plan within {budget:g} s (status: {r1.status}). "
@@ -440,6 +520,34 @@ def optimize(
     z1 = max(0.0, float(r1.x[model.z]))
     total_short = float(sum(r1.x[j] for j in model.s))
     rows: list = []
+    ready_target: int | None = None
+
+    if z1 > TOL_KWH and policy == "most_ready":
+        # Not everyone can be ready. Stage 1a: as many vehicles fully ready as
+        # possible. Start from whichever of the baseline and the stage 1 plan
+        # has more ready vehicles, so the answer is never below the baseline.
+        model.add_ready_vars()
+        x_base = model.vector_from(*baseline)
+        x1 = model.complete(r1.x)
+        r1.x = x1  # the model has new variables; keep the stage 1 plan usable as a start
+        count = {j: -1.0 for j in model.r}
+        start = x1 if model.objective_value(count, x1) < model.objective_value(count, x_base) else x_base
+        r0 = run.solve(count, {}, [], gap=0.0, abs_gap=0.999, start=start)  # whole vehicles: within 1 is exact
+        if r0.has_solution:
+            ready_target = int(round(sum(float(r0.x[j]) for j in model.r)))
+            rows = [(list(model.r), [1.0] * len(model.r), ready_target - 0.5, INF)]
+            best = r0
+            stages.append("most vehicles ready")
+            # Stage 1b: keeping that many ready, the smallest biggest-shortfall.
+            # Proving the best answer here can take long (the count makes the
+            # model harder), so 1b and 2 get a share of the time each.
+            share = max(2.0, 0.15 * budget)
+            r1b = run.solve({model.z: 1.0}, {}, rows, gap=1e-4, abs_gap=0.01, start=r0.x, time_cap=share)
+            if r1b.has_solution:
+                best = r1b
+                z1 = max(0.0, float(r1b.x[model.z]))
+                total_short = float(sum(r1b.x[j] for j in model.s))
+
     if z1 <= TOL_KWH:
         bounds = {j: (0.0, u + TOL_KWH) for j, u in zip(model.s, model.unavoidable)}
         bounds[model.z] = (0.0, TOL_KWH)
@@ -447,12 +555,13 @@ def optimize(
     else:
         bounds = {model.z: (0.0, z1 + max(1e-4, 1e-6 * z1))}
         # Stage 2: smallest total shortfall, keeping the biggest one as small
-        r2 = run.solve({j: 1.0 for j in model.s}, bounds, [], gap=1e-4, abs_gap=0.05, start=best.x)
+        r2 = run.solve({j: 1.0 for j in model.s}, bounds, rows, gap=1e-4, abs_gap=0.05, start=best.x,
+                       time_cap=max(2.0, 0.15 * budget) if model.r else None)
         if r2.has_solution:
             best = r2
             stages.append("total shortfall")
             total_short = float(sum(r2.x[j] for j in model.s))
-            rows = [(list(model.s), [1.0] * len(model.s), -INF, total_short + max(1e-3, 1e-6 * total_short))]
+            rows = rows + [(list(model.s), [1.0] * len(model.s), -INF, total_short + max(1e-3, 1e-6 * total_short))]
 
     # Stage 3: lowest cost with that readiness (start from the cheaper of
     # the readiness plan and the baseline, when the baseline qualifies)
@@ -461,7 +570,7 @@ def optimize(
     base_ok = all(lo - 1e-9 <= x_base[j] <= hi + 1e-9 for j, (lo, hi) in bounds.items()) and not rows
     if base_ok and model.objective_value(cost, x_base) < model.objective_value(cost, start):
         start = x_base
-    r3 = run.solve(cost, bounds, rows, gap=COST_GAP, abs_gap=0.01, start=start)
+    r3 = run.solve(cost, bounds, rows, gap=COST_GAP, abs_gap=0.01, start=start, neat=True)
     gap = r3.gap
     if r3.has_solution:
         best = r3
@@ -470,11 +579,12 @@ def optimize(
         cost_now = sum(cost[j] * float(r3.x[j]) for j in cost)
         cost_row = (list(cost), list(cost.values()), -INF, cost_now + max(1e-4, 1e-7 * abs(cost_now)))
         tidy = model.tidy_objective()
+        keep = {j: (float(round(r3.x[j])),) * 2 for j in model.r}  # same vehicles ready
         if run.last_fix is not None:  # chargers already fixed: tidy as a linear program
-            r4 = m.solve(tidy, bounds={**bounds, **run.last_fix}, extra_rows=rows + [cost_row],
+            r4 = m.solve(tidy, bounds={**bounds, **keep, **run.last_fix}, extra_rows=rows + [cost_row],
                          time_limit=run.remaining())
         else:
-            r4 = m.solve(tidy, bounds=bounds, extra_rows=rows + [cost_row], mip_gap=1e-3, start=r3.x,
+            r4 = m.solve(tidy, bounds={**bounds, **keep}, extra_rows=rows + [cost_row], mip_gap=1e-3, start=r3.x,
                          max_nodes=TIDY_NODES, time_limit=min(run.remaining(), TIDY_SECONDS))
         if r4.has_solution:
             best = r4
@@ -493,4 +603,6 @@ def optimize(
         max_shortfall_kwh=z1,
         total_shortfall_kwh=total_short,
         contested_steps=model.contested_steps,
+        policy=policy,
+        ready_target=ready_target,
     )

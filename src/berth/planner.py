@@ -11,7 +11,7 @@ from berth.baseline import baseline_schedule
 from berth.diagnose import diagnose
 from berth.errors import BerthInputError, format_validation_error
 from berth.evaluate import Metrics, evaluate
-from berth.models import Fleet
+from berth.models import SHORTFALL_POLICIES, Fleet
 from berth.optimizer import optimize
 from berth.problem import Problem, build_problem
 from berth.report import money
@@ -40,17 +40,46 @@ def parse_fleet(data: Any, source: str | None = None) -> Fleet:
         raise BerthInputError(format_validation_error(exc, data), source) from None
 
 
-def plan(fleet: Fleet | dict, time_limit: float | None = None) -> PlanResult:
-    """Plan charging for a fleet. Raises BerthInputError for bad input."""
+def plan(
+    fleet: Fleet | dict,
+    time_limit: float | None = None,
+    shortfall_policy: str | None = None,
+) -> PlanResult:
+    """Plan charging for a fleet. Raises BerthInputError for bad input.
+    `shortfall_policy` ("most_ready" or "fair") overrides the fleet's own."""
     fleet = parse_fleet(fleet)
+    if shortfall_policy is not None:
+        fleet = with_policy(fleet, shortfall_policy)
     prob = build_problem(fleet)
     limit = time_limit if time_limit is not None else prob.time_limit_s
     base_power, base_assign = baseline_schedule(prob)
     opt = optimize(prob, limit, baseline=(base_power, base_assign))
     m_opt = evaluate(prob, opt.power)
     m_base = evaluate(prob, base_power)
+    fallback = False
+    if prob.shortfall_policy == "most_ready" and m_opt.vehicles_ready < m_base.vehicles_ready:
+        # Should not happen (the solver starts from the baseline), but the
+        # promise is: never fewer vehicles ready than charging on arrival.
+        opt.power = base_power.copy()
+        m_opt = m_base
+        fallback = True
     diag = diagnose(prob, m_opt, limit) if not m_opt.all_ready else None
-    return _build_result(prob, opt, m_opt, base_power, m_base, diag)
+    result = _build_result(prob, opt, m_opt, base_power, m_base, diag)
+    if fallback:
+        result.notes.append(
+            "The solver found no plan with as many vehicles ready as charging on arrival in its time limit, "
+            "so this plan is charging on arrival. Raise time_limit_s to search longer."
+        )
+    return result
+
+
+def with_policy(fleet: Fleet, policy: str) -> Fleet:
+    """The same fleet with another shortfall policy (checked)."""
+    if policy not in SHORTFALL_POLICIES:
+        raise BerthInputError(
+            f"shortfall_policy must be one of: {', '.join(SHORTFALL_POLICIES)} (got {policy!r})"
+        )
+    return fleet.model_copy(update={"shortfall_policy": policy})
 
 
 def _r(x: float, nd: int = 4) -> float:
@@ -196,25 +225,51 @@ def _build_result(prob, opt, m_opt: Metrics, base_power, m_base: Metrics, diag) 
             f"This plan counts {days:g}/{prob.billing_days:g} of it, as if every day of the month has "
             "the same peak. Only the part of the peak caused by charging is counted."
         )
+    policy = prob.shortfall_policy
     if not m_opt.all_ready:
-        notes.append(
-            "Not every vehicle can be ready. Berth gives energy first to the vehicles that would be most "
-            "short (it makes the biggest shortfall as small as possible, then the total), and only then "
-            "looks at cost."
-        )
+        if policy == "most_ready":
+            notes.append(
+                "Not every vehicle can be ready. Berth first gets as many vehicles fully ready as it can "
+                f"({m_opt.vehicles_ready} of {V}), then keeps the biggest shortfall of the others as small as "
+                "possible, then the total, and only then looks at cost (shortfall_policy: most_ready). "
+                "Use shortfall_policy: fair to share the shortfall over all vehicles instead."
+            )
+        else:
+            notes.append(
+                "Not every vehicle can be ready. Berth shares the shortfall: it gives energy first to the "
+                "vehicles that would be most short (the biggest shortfall as small as possible, then the "
+                "total), and only then looks at cost (shortfall_policy: fair). Use shortfall_policy: "
+                "most_ready to get the most vehicles fully ready instead."
+            )
     if not m_base.all_ready:
         worst = m_base.worst
-        notes.append(
+        text = (
             f"Charging on arrival leaves {V - m_base.vehicles_ready} vehicle(s) short "
-            f"(biggest shortfall {worst.shortfall_kwh:.1f} kWh, {worst.stop.vehicle_id}), "
-            "so its cost covers less energy."
+            f"(biggest shortfall {worst.shortfall_kwh:.1f} kWh, {worst.stop.vehicle_id})"
         )
+        if m_base.grid_kwh < m_opt.grid_kwh - 0.05:
+            text += (
+                f", and it uses less energy ({m_base.grid_kwh:.1f} vs {m_opt.grid_kwh:.1f} kWh), "
+                "so its cost is not directly comparable"
+            )
+        notes.append(text + ".")
         if m_base.vehicles_ready > m_opt.vehicles_ready:
             notes.append(
                 f"Charging on arrival gets more vehicles fully ready ({m_base.vehicles_ready} vs "
                 f"{m_opt.vehicles_ready}) by leaving others far behind; Berth keeps the biggest shortfall at "
                 f"{m_opt.worst.shortfall_kwh:.1f} kWh instead."
             )
+        elif m_opt.vehicles_ready > m_base.vehicles_ready and m_opt.worst and worst:
+            text = (
+                f"Berth gets more vehicles fully ready than charging on arrival "
+                f"({m_opt.vehicles_ready} vs {m_base.vehicles_ready})"
+            )
+            if m_opt.worst.shortfall_kwh > worst.shortfall_kwh + 0.05:
+                text += (
+                    f"; the price is a bigger shortfall on {m_opt.worst.stop.vehicle_id} "
+                    f"({m_opt.worst.shortfall_kwh:.1f} kWh vs {worst.shortfall_kwh:.1f} kWh at most)"
+                )
+            notes.append(text + ".")
     if opt.optimal and opt.gap is not None and opt.gap > 1e-3:
         notes.append(
             f"The cost of this plan is proven to be within {opt.gap * 100:.2f}% of the lowest possible cost "
@@ -223,8 +278,9 @@ def _build_result(prob, opt, m_opt: Metrics, base_power, m_base: Metrics, diag) 
     if not opt.optimal:
         gap = f" (gap {opt.gap * 100:.2f}%)" if opt.gap is not None else ""
         notes.append(
-            f"The solver stopped at its time limit{gap}. The plan respects every limit but may not be "
-            "the cheapest possible. Raise time_limit_s or use a longer time step for a better answer."
+            f"The solver stopped at a time limit{gap}. The plan respects every limit, but it is not proven "
+            "to be the best possible (readiness of the vehicles that fall short, or cost). Raise "
+            "time_limit_s or use a longer time step for a better answer."
         )
     if opt.contested_steps:
         notes.append(
@@ -239,6 +295,7 @@ def _build_result(prob, opt, m_opt: Metrics, base_power, m_base: Metrics, diag) 
         step_minutes=prob.step_minutes,
         headline=head,
         all_ready=m_opt.all_ready,
+        shortfall_policy=policy,
         times=list(prob.labels),
         end=prob.edge_labels[-1],
         price=[_r(x, 5) for x in prob.price],

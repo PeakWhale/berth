@@ -91,6 +91,7 @@ def summary_text(r: "PlanResult", max_vehicles: int = 40) -> str:
     if r.shortfalls:
         out.append("")
         out.append("Vehicles that fall short:")
+        out.append(f"  ({policy_text(r)})")
         for item in r.shortfalls:
             out.append(f"  {item.vehicle_id} (stop {item.stop}, leaves {item.departure}): {item.shortfall_kwh:.1f} kWh short")
             for reason in item.reasons:
@@ -128,6 +129,22 @@ def _short(text: str, n: int) -> str:
 
 def _chargers_text(r: "PlanResult") -> str:
     return ", ".join(f"{c['count']} x {c['kw']:g} kW" for c in r.chargers)
+
+
+def policy_text(r: "PlanResult") -> str:
+    """One sentence on how Berth chose who falls short."""
+    o, b = r.optimized, r.baseline
+    if r.shortfall_policy == "fair":
+        return (
+            f"Policy fair: Berth shares the shortfall. Biggest shortfall {o.max_shortfall_kwh:.1f} kWh "
+            f"(charging on arrival: {b.max_shortfall_kwh:.1f} kWh); {o.vehicles_ready} of {o.vehicles_total} "
+            "vehicles fully ready."
+        )
+    return (
+        f"Policy most_ready: Berth gets as many vehicles fully ready as it can, {o.vehicles_ready} of "
+        f"{o.vehicles_total} (charging on arrival: {b.vehicles_ready}), then keeps the shortfall of the "
+        "others as small as possible."
+    )
 
 
 def explain(r: "PlanResult", max_vehicles: int = 15) -> str:
@@ -183,6 +200,7 @@ def explain(r: "PlanResult", max_vehicles: int = 15) -> str:
     if r.shortfalls:
         lines.append("")
         lines.append("Why some vehicles fall short:")
+        lines.append(policy_text(r))
         for item in r.shortfalls:
             lines.append(f"- {item.vehicle_id} (leaves {item.departure}) is {item.shortfall_kwh:.1f} kWh short.")
             for reason in item.reasons:

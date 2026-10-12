@@ -98,6 +98,10 @@ class PlanResult(BaseModel):
     step_minutes: int
     headline: str = Field(description="One-line summary in plain words.")
     all_ready: bool
+    shortfall_policy: str = Field(
+        description="most_ready (most vehicles fully ready first) or fair (smallest biggest shortfall). "
+        "Only matters when not every vehicle can be ready."
+    )
     times: list[str] = Field(description="Start label of each time step.")
     end: str = Field(description="When the last time step ends.")
     price: list[float] = Field(description="Energy price per kWh in each step.")
