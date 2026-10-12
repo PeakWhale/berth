@@ -214,9 +214,12 @@ def build_problem(fleet: Fleet) -> Problem:
         if isinstance(p, datetime):
             return (p - start_dt).total_seconds() / 60.0  # type: ignore[operator]
         off = float((p - start_clock) % MINUTES_PER_DAY)
-        while off < not_before:
-            off += MINUTES_PER_DAY
+        if off < not_before:  # the first time this clock time comes after not_before
+            off += math.ceil((not_before - off) / MINUTES_PER_DAY) * MINUTES_PER_DAY
         return off
+
+    def too_late(minutes: float) -> bool:
+        return minutes > MAX_HOURS * 60
 
     # ---- vehicles and stops -----------------------------------------------
     vehicles: list[VehicleData] = []
@@ -229,6 +232,12 @@ def build_problem(fleet: Fleet) -> Problem:
         for k, st in enumerate(stops_in, start=1):
             where = who if len(stops_in) == 1 else f"{who}, stop {k}"
             arr = resolve(st.arrival, cursor if k > 1 else 0.0)
+            if too_late(arr):
+                errors.append(
+                    f"{where}: arrival {st.arrival} is more than {MAX_HOURS} hours after the plan start "
+                    f"({label(0)}). Check the date, or set start."
+                )
+                continue
             if k == 1 and arr < 0:
                 notes.append(f"{who} arrives before the plan start; it is treated as parked from the start.")
                 arr = 0.0
@@ -245,6 +254,12 @@ def build_problem(fleet: Fleet) -> Problem:
                 errors.append(
                     f"{where}: departure {st.departure} is at or before the plan start ({label(0)}), so it cannot "
                     "charge. Set start earlier or remove this stop."
+                )
+                continue
+            if too_late(dep):
+                errors.append(
+                    f"{where}: departure {st.departure} is more than {MAX_HOURS} hours after the plan start "
+                    f"({label(0)}). Check the date, or set start."
                 )
                 continue
             if dep <= arr:

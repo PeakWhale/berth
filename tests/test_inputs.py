@@ -255,6 +255,19 @@ def test_departure_before_the_plan_start_is_explained():
     assert "departure 2026-03-02T15:00 is at or before the plan start (2026-03-02 16:00)" in problems_of(e)
 
 
+def test_times_far_after_the_start_are_refused_quickly():
+    import time
+
+    # a far-future date with a clock-time departure used to loop once per day
+    fleet = make_fleet([van(i, arrival="9999-12-31T00:00", departure="06:00") for i in range(50)])
+    fleet["start"] = "2026-03-02T16:00"
+    started = time.perf_counter()
+    with pytest.raises(BerthInputError) as e:
+        build_problem(parse_fleet(fleet))
+    assert time.perf_counter() - started < 1.0
+    assert "more than 168 hours after the plan start" in problems_of(e)
+
+
 def test_hours_too_short_is_explained():
     fleet = make_fleet([van(1)])
     fleet["hours"] = 6
