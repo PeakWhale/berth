@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import math
 import sys
 from pathlib import Path
 
@@ -12,6 +13,17 @@ from berth.errors import BerthInputError, BerthSolverError
 EXIT_INPUT, EXIT_SOLVER, EXIT_SHORT = 1, 3, 4
 
 
+def _number(text: str) -> float:
+    """argparse type: a finite number (NaN and infinity are refused)."""
+    try:
+        value = float(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"'{text}' is not a number") from None
+    if not math.isfinite(value):
+        raise argparse.ArgumentTypeError(f"'{text}' is not allowed (use a finite number)")
+    return value
+
+
 def _add_input_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("fleet", nargs="?", help="fleet file (.yaml or .json)")
     p.add_argument("--example", metavar="NAME", help="use a bundled example fleet (see: berth examples)")
@@ -19,16 +31,16 @@ def _add_input_args(p: argparse.ArgumentParser) -> None:
     g.add_argument("--vehicles", metavar="CSV", help="vehicles CSV, one row per stop")
     g.add_argument("--tariff", metavar="FILE", help="tariff file (.yaml or .csv)")
     g.add_argument("--chargers", metavar="SPEC", help="charger groups, like 8x19.2 or 8x19.2,2x50")
-    g.add_argument("--site-limit-kw", type=float, metavar="KW", help="site power limit, kW")
-    g.add_argument("--other-load-kw", type=float, default=0.0, metavar="KW", help="other building load, kW (default 0)")
-    g.add_argument("--demand-charge", type=float, metavar="RATE", help="demand charge per kW of monthly peak")
-    g.add_argument("--efficiency", type=float, default=1.0, help="charging efficiency, 0.5 to 1 (default 1)")
+    g.add_argument("--site-limit-kw", type=_number, metavar="KW", help="site power limit, kW")
+    g.add_argument("--other-load-kw", type=_number, default=0.0, metavar="KW", help="other building load, kW (default 0)")
+    g.add_argument("--demand-charge", type=_number, metavar="RATE", help="demand charge per kW of monthly peak")
+    g.add_argument("--efficiency", type=_number, default=1.0, help="charging efficiency, 0.5 to 1 (default 1)")
     g.add_argument("--name", default=None, help="name for this plan")
     o = p.add_argument_group("options")
     o.add_argument("--start", help="plan start, HH:MM or date and time (default: earliest arrival)")
-    o.add_argument("--hours", type=float, help="plan length in hours (default: until the last departure)")
+    o.add_argument("--hours", type=_number, help="plan length in hours (default: until the last departure)")
     o.add_argument("--step", type=int, metavar="MIN", help="time step in minutes (default 15)")
-    o.add_argument("--time-limit", type=float, metavar="S", help="solver time limit in seconds (default 30)")
+    o.add_argument("--time-limit", type=_number, metavar="S", help="solver time limit in seconds (default 30)")
     o.add_argument(
         "--shortfall-policy",
         choices=["most_ready", "fair"],

@@ -6,6 +6,7 @@ the MCP server.
 
 from __future__ import annotations
 
+import math
 from typing import Annotated, Literal, Union
 
 from pydantic import (
@@ -31,7 +32,7 @@ class Period(BaseModel):
     """A value that applies between two clock times. `to` may be before `from`
     to wrap past midnight (for example 21:00 to 07:00)."""
 
-    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+    model_config = ConfigDict(populate_by_name=True, extra="forbid", allow_inf_nan=False)
 
     start: str = Field(
         validation_alias=AliasChoices("from", "start"),
@@ -84,17 +85,25 @@ def _short_errors(exc: ValidationError) -> str:
     return "; ".join(parts)
 
 
+def _finite(x: float) -> float:
+    x = float(x)
+    if not math.isfinite(x):
+        raise ValueError(f"must be a number, not {x!r} (NaN and infinity are not allowed)")
+    return x
+
+
 def _normalize_profile(value):
     """Turn a profile into a float, a list of 24 floats, or a list of Periods."""
     if isinstance(value, bool):
         raise ValueError(PROFILE_HELP)
     if isinstance(value, (int, float)):
-        return float(value)
+        return _finite(value)
     if isinstance(value, str):
         try:
-            return float(value)
+            number = float(value)
         except ValueError:
             raise ValueError(PROFILE_HELP) from None
+        return _finite(number)
     if isinstance(value, (list, tuple)):
         if not value:
             raise ValueError("is an empty list; " + PROFILE_HELP)
@@ -104,7 +113,7 @@ def _normalize_profile(value):
                     f"has {len(value)} numbers; a list of numbers must have exactly 24 values, "
                     "one for each hour starting at 00:00"
                 )
-            return [float(x) for x in value]
+            return [_finite(x) for x in value]
         if all(isinstance(x, (dict, Period)) for x in value):
             periods = []
             for i, item in enumerate(value, start=1):
@@ -176,7 +185,7 @@ Time = Annotated[str, BeforeValidator(lambda v: check_time(str(v)) if v is not N
 class ChargerGroup(BaseModel):
     """A group of identical chargers."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
 
     count: int = Field(ge=1, le=10000, description="Number of chargers in this group.")
     kw: float = Field(gt=0, le=2000, description="Maximum power of each charger, kW.")
@@ -186,7 +195,7 @@ class ChargerGroup(BaseModel):
 class Site(BaseModel):
     """The depot: chargers and power limits."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
 
     power_limit_kw: Profile = Field(
         description="Most power the whole site may import, kW. A number, or a value by time of day."
@@ -222,7 +231,7 @@ class Site(BaseModel):
 class Tariff(BaseModel):
     """Electricity prices."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
 
     name: str = Field("Tariff", description="A name for this tariff.")
     currency: str = Field("USD", description="Currency code, only used for display.")
@@ -246,7 +255,7 @@ class Tariff(BaseModel):
 class Stop(BaseModel):
     """One parked period at the depot."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
 
     arrival: Time = Field(description="When the vehicle parks. HH:MM or a full date and time.")
     departure: Time = Field(description="When the vehicle must leave. HH:MM or a full date and time.")
@@ -262,7 +271,7 @@ class Stop(BaseModel):
 class Vehicle(BaseModel):
     """A vehicle. Give arrival, departure and required_soc_pct for one stop, or a list of stops."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
 
     id: str = Field(min_length=1, description="Vehicle name or number.")
     battery_kwh: float = Field(gt=0, le=5000, description="Usable battery size, kWh.")
@@ -320,7 +329,7 @@ SHORTFALL_POLICIES: tuple[str, ...] = ("most_ready", "fair")
 class Fleet(BaseModel):
     """Everything Berth needs to plan charging."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
 
     name: str = Field("My fleet", description="A name for this plan.")
     description: str | None = Field(None, description="Optional notes about this fleet.")

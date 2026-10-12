@@ -80,6 +80,16 @@ def test_validation_errors_are_clear(client):
     assert "vehicle 2 (V2): max_kw: is required but missing" in res.json()["problems"]
 
 
+def test_nan_in_json_is_refused(client):
+    import json
+
+    fleet = client.get("/api/examples/delivery-vans").json()
+    fleet["tariff"]["energy_price_per_kwh"] = float("nan")  # json.dumps writes NaN
+    res = client.post("/api/plan", content=json.dumps(fleet), headers={"Content-Type": "application/json"})
+    assert res.status_code == 422
+    assert any("energy_price_per_kwh" in p and "NaN" in p for p in res.json()["problems"])
+
+
 def test_yaml_errors_are_clear(client):
     res = client.post("/api/plan/yaml", content="site: [1, 2\n", headers={"Content-Type": "text/plain"})
     assert res.status_code == 400

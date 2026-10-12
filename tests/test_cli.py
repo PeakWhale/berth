@@ -52,6 +52,15 @@ def test_input_errors_exit_cleanly(tmp_path, capsys):
     assert "--tariff" in capsys.readouterr().err
 
 
+def test_nan_on_the_command_line_is_refused(capsys):
+    import pytest
+
+    with pytest.raises(SystemExit) as e:
+        main(["plan", "--example", "delivery-vans", "--no-csv", "--time-limit", "nan"])
+    assert e.value.code == 2
+    assert "not allowed" in capsys.readouterr().err
+
+
 def test_explain_and_examples(capsys):
     assert main(["explain", "--example", "late-shift-infeasible"]) == 0
     text = capsys.readouterr().out

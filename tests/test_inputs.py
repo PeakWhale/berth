@@ -98,6 +98,31 @@ def test_tariff_periods_must_cover_the_day_without_overlap():
     assert "overlap at 11:00" in problems_of(e)
 
 
+@pytest.mark.parametrize(
+    "section, key, value",
+    [
+        ("tariff", "energy_price_per_kwh", float("nan")),
+        ("tariff", "energy_price_per_kwh", "nan"),
+        ("site", "power_limit_kw", float("inf")),
+        ("site", "power_limit_kw", [{"from": "00:00", "to": "24:00", "kw": float("nan")}]),
+        ("site", "other_load_kw", [5.0] * 23 + [float("nan")]),
+        ("tariff", "demand_charge_per_kw", float("nan")),
+    ],
+)
+def test_nan_and_infinity_are_refused(section, key, value):
+    fleet = make_fleet([van(1)])
+    fleet[section][key] = value
+    with pytest.raises(BerthInputError) as e:
+        parse_fleet(fleet)
+    assert key in problems_of(e)
+    assert "finite" in problems_of(e) or "NaN" in problems_of(e)
+
+
+def test_nan_in_csv_is_refused():
+    with pytest.raises(BerthInputError, match="price_per_kwh 'nan' is not a number"):
+        read_tariff_csv("hour,price_per_kwh\n" + "\n".join(f"{h},{'nan' if h == 3 else 0.1}" for h in range(24)), "t.csv")
+
+
 def test_whole_day_period():
     fleet = make_fleet([van(1)])
     fleet["site"]["power_limit_kw"] = [{"from": "00:00", "to": "24:00", "kw": 100}]

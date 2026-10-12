@@ -12,6 +12,8 @@ from dataclasses import dataclass
 import highspy
 import numpy as np
 
+from berth.errors import BerthInputError
+
 INF = highspy.kHighsInf
 
 
@@ -100,18 +102,30 @@ class LinearModel:
             row_lb.append(lo)
             row_ub.append(hi)
 
+        row_lb_a = np.array(row_lb, dtype=float)
+        row_ub_a = np.array(row_ub, dtype=float)
+        value_a = np.array(value, dtype=float)
+        # Bad numbers (NaN, or infinite costs and coefficients) can make
+        # HiGHS ignore its time limit. Input checks refuse them; this is the
+        # last line of defence.
+        if (
+            np.isnan(lb).any() or np.isnan(ub).any() or not np.isfinite(c).all()
+            or np.isnan(row_lb_a).any() or np.isnan(row_ub_a).any() or not np.isfinite(value_a).all()
+        ):
+            raise BerthInputError("a price or limit is not a number (NaN or infinity); check the tariff and the site")
+
         lp = highspy.HighsLp()
         lp.num_col_ = n
         lp.num_row_ = len(row_lb)
         lp.col_cost_ = c
         lp.col_lower_ = lb
         lp.col_upper_ = ub
-        lp.row_lower_ = np.array(row_lb, dtype=float)
-        lp.row_upper_ = np.array(row_ub, dtype=float)
+        lp.row_lower_ = row_lb_a
+        lp.row_upper_ = row_ub_a
         lp.a_matrix_.format_ = highspy.MatrixFormat.kRowwise
         lp.a_matrix_.start_ = np.array(starts, dtype=np.int32)
         lp.a_matrix_.index_ = np.array(index, dtype=np.int32)
-        lp.a_matrix_.value_ = np.array(value, dtype=float)
+        lp.a_matrix_.value_ = value_a
         is_mip = any(self.integer) and not relax
         if is_mip:
             lp.integrality_ = [

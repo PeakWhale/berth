@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import json
+import math
 import re
 from pathlib import Path
 from typing import Any
@@ -141,9 +142,12 @@ def _norm(name: str) -> str:
 
 def _number(value: str, column: str, line: int, source: str) -> float:
     try:
-        return float(value.replace("%", "").strip())
+        number = float(value.replace("%", "").strip())
     except ValueError:
         raise BerthInputError(f"line {line}: {column} '{value}' is not a number", source) from None
+    if not math.isfinite(number):
+        raise BerthInputError(f"line {line}: {column} '{value}' is not a number (NaN and infinity are not allowed)", source)
+    return number
 
 
 def read_vehicles_csv(text: str, source: str = "vehicles.csv") -> list[dict]:

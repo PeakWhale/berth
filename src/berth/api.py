@@ -60,9 +60,11 @@ async def _solver_error(_: Request, exc: BerthSolverError) -> JSONResponse:
 async def _validation_error(_: Request, exc: RequestValidationError) -> JSONResponse:
     body = exc.body if isinstance(exc.body, dict) else None
     problems = format_error_list(exc.errors(), body, drop_prefix=("body",))
+    # the raw inputs are left out: they can hold values JSON cannot show (NaN)
+    detail = [{"type": e.get("type"), "loc": list(e.get("loc", ())), "msg": e.get("msg")} for e in exc.errors()]
     return JSONResponse(
         status_code=422,
-        content={"error": "the fleet is not valid", "problems": problems, "detail": jsonable_encoder(exc.errors())},
+        content={"error": "the fleet is not valid", "problems": problems, "detail": jsonable_encoder(detail)},
     )
 
 
