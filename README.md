@@ -100,17 +100,21 @@ vehicles:
 | `billing_days` | a one-day plan carries 1/30 of the monthly demand charge by default. Set it to 1 to count the full charge. |
 | `hours`, `time_limit_s` | plan length (default: until the last departure) and time limit for the whole plan, explaining any shortfalls included (default 30 s) |
 | `shortfall_policy` | what to do when not every vehicle can be ready: `most_ready` (default) or `fair`. See "When not every vehicle can be ready" below. |
+| `vehicles` | the list of vehicles, or the name of a vehicle CSV file next to the fleet file (`vehicles: vans.csv`, command line only) |
 
 **Times:** quotes around times are optional (`arrival: 17:30` works). A departure earlier than the arrival means the next day. Berth rounds each arrival up and each departure down to the time step, so a vehicle only charges in steps where it is parked the whole time.
 
-**Tariff in its own file:** `tariff: tariff-tou.yaml` reads the tariff from a file next to the fleet file (command line only). See `examples/tariff-tou.yaml`.
+**Tariff or vehicles in their own file:** `tariff: tariff-tou.yaml` reads the tariff from a file next to the fleet file (command line only). See `examples/tariff-tou.yaml`. `vehicles: vans.csv` works the same way for the vehicles, in the CSV format below.
 
 **CSV instead of YAML:** one row per vehicle (or per stop), plus the site settings as options:
 
 ```bash
 uv run berth plan --vehicles examples/csv/vans.csv --tariff examples/csv/tariff-tou.csv \
-  --chargers 12x19.2 --site-limit-kw 150 --other-load-kw 12 --start 16:00
+  --chargers 12x19.2 --site-limit-kw 150 --other-load-kw 12 --start 16:00 \
+  --efficiency 0.92 --demand-charge 15
 ```
+
+These are the vans, tariff and chargers of `examples/delivery-vans.yaml`, but the results differ a little ($119.47 instead of $107.97): on the command line the other load is one flat value (12 kW here; the YAML has 35 kW by day), so more of the peak counts for the demand charge. Without `--efficiency` and `--demand-charge` the efficiency is 1 and there is no demand charge. To keep everything else in YAML, use `vehicles: vans.csv` in the fleet file instead.
 
 Vehicle CSV columns: `id, battery_kwh, max_kw, arrival, departure, arrival_soc_pct, required_soc_pct` (and `trip_kwh` for later stops; use the same `id` on several rows for several stops). Tariff CSV: `hour,price_per_kwh` (24 rows) or `from,to,price`.
 
