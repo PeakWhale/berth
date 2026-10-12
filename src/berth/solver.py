@@ -68,7 +68,10 @@ class LinearModel:
         extra_rows: list[tuple[list[int], list[float], float, float]] | None = None,
         time_limit: float = 30.0,
         mip_gap: float = 1e-4,
+        start: np.ndarray | None = None,
+        relax: bool = False,
     ) -> SolveResult:
+        """Solve. `relax=True` ignores integrality (the LP relaxation)."""
         started = time.perf_counter()
         n = self.n_vars
         lb = np.array(self.lb, dtype=float)
@@ -103,7 +106,7 @@ class LinearModel:
         lp.a_matrix_.start_ = np.array(starts, dtype=np.int32)
         lp.a_matrix_.index_ = np.array(index, dtype=np.int32)
         lp.a_matrix_.value_ = np.array(value, dtype=float)
-        is_mip = any(self.integer)
+        is_mip = any(self.integer) and not relax
         if is_mip:
             lp.integrality_ = [
                 highspy.HighsVarType.kInteger if flag else highspy.HighsVarType.kContinuous
@@ -116,6 +119,11 @@ class LinearModel:
         h.setOptionValue("mip_rel_gap", float(mip_gap))
         h.setOptionValue("random_seed", 0)
         h.passModel(lp)
+        if start is not None and is_mip:
+            sol = highspy.HighsSolution()
+            sol.col_value = [float(v) for v in start]
+            sol.value_valid = True
+            h.setSolution(sol)
         h.run()
 
         status = h.getModelStatus()
