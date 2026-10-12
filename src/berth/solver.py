@@ -68,6 +68,7 @@ class LinearModel:
         extra_rows: list[tuple[list[int], list[float], float, float]] | None = None,
         time_limit: float = 30.0,
         mip_gap: float = 1e-4,
+        abs_gap: float | None = None,
         start: np.ndarray | None = None,
         relax: bool = False,
     ) -> SolveResult:
@@ -117,6 +118,8 @@ class LinearModel:
         h.setOptionValue("output_flag", False)
         h.setOptionValue("time_limit", float(max(time_limit, 0.5)))
         h.setOptionValue("mip_rel_gap", float(mip_gap))
+        if abs_gap is not None:
+            h.setOptionValue("mip_abs_gap", float(abs_gap))
         h.setOptionValue("random_seed", 0)
         h.passModel(lp)
         if start is not None and is_mip:

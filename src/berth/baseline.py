@@ -15,8 +15,15 @@ from berth.problem import Problem, StopData
 
 
 def baseline_power(prob: Problem) -> np.ndarray:
+    return baseline_schedule(prob)[0]
+
+
+def baseline_schedule(prob: Problem) -> tuple[np.ndarray, dict[tuple[int, int], int]]:
+    """Power per vehicle and step, and which charger group each vehicle
+    used in each step: {(vehicle, step): group index}."""
     V, T = len(prob.vehicles), prob.n_steps
     power = np.zeros((V, T))
+    assign: dict[tuple[int, int], int] = {}
     energy = [veh.arrival_kwh for veh in prob.vehicles]
     trips_applied = [0] * V  # stop number whose trip has been subtracted
 
@@ -40,13 +47,17 @@ def baseline_power(prob: Problem) -> np.ndarray:
             if s.required_kwh - energy[v] > 1e-9:
                 waiting.append((s.arrival_min, v, s))
         waiting.sort(key=lambda w: (w[0], w[1]))
-        slots = sorted((kw for count, kw in prob.chargers for _ in range(min(count, len(waiting)))), reverse=True)
+        slots = sorted(
+            ((kw, g) for g, (count, kw) in enumerate(prob.chargers) for _ in range(min(count, len(waiting)))),
+            key=lambda x: (-x[0], x[1]),
+        )
         left = float(avail[t])
-        for (_, v, s), charger_kw in zip(waiting, slots):
+        for (_, v, s), (charger_kw, g) in zip(waiting, slots):
+            assign[(v, t)] = g
             veh = prob.vehicles[v]
             need_kw = (s.required_kwh - energy[v]) / step_kwh
             p = max(0.0, min(veh.max_kw, charger_kw, need_kw, left))
             power[v, t] = p
             left -= p
             energy[v] += p * step_kwh
-    return power
+    return power, assign

@@ -7,7 +7,7 @@ from typing import Any
 import numpy as np
 from pydantic import ValidationError
 
-from berth.baseline import baseline_power
+from berth.baseline import baseline_schedule
 from berth.diagnose import diagnose
 from berth.errors import BerthInputError, format_validation_error
 from berth.evaluate import Metrics, evaluate
@@ -45,9 +45,9 @@ def plan(fleet: Fleet | dict, time_limit: float | None = None) -> PlanResult:
     fleet = parse_fleet(fleet)
     prob = build_problem(fleet)
     limit = time_limit if time_limit is not None else prob.time_limit_s
-    opt = optimize(prob, limit)
+    base_power, base_assign = baseline_schedule(prob)
+    opt = optimize(prob, limit, baseline=(base_power, base_assign))
     m_opt = evaluate(prob, opt.power)
-    base_power = baseline_power(prob)
     m_base = evaluate(prob, base_power)
     diag = diagnose(prob, m_opt, limit) if not m_opt.all_ready else None
     return _build_result(prob, opt, m_opt, base_power, m_base, diag)
@@ -215,6 +215,11 @@ def _build_result(prob, opt, m_opt: Metrics, base_power, m_base: Metrics, diag) 
                 f"{m_opt.vehicles_ready}) by leaving others far behind; Berth keeps the biggest shortfall at "
                 f"{m_opt.worst.shortfall_kwh:.1f} kWh instead."
             )
+    if opt.optimal and opt.gap is not None and opt.gap > 1e-3:
+        notes.append(
+            f"The cost of this plan is proven to be within {opt.gap * 100:.2f}% of the lowest possible cost "
+            "(sharing few chargers between many vehicles is a hard puzzle to solve exactly)."
+        )
     if not opt.optimal:
         gap = f" (gap {opt.gap * 100:.2f}%)" if opt.gap is not None else ""
         notes.append(
