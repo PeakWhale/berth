@@ -35,7 +35,7 @@ uv run berth plan examples/delivery-vans.yaml      # 2. plan the example fleet (
 uv run berth serve                                 # 3. open http://127.0.0.1:8000
 ```
 
-Other commands: `uv run berth examples` (list the example fleets), `uv run berth explain examples/late-shift-infeasible.yaml` (the plan in plain words), `uv run berth plan --help`.
+Other commands: `uv run berth examples` (list the example fleets), `uv run berth explain examples/late-shift-infeasible.yaml` (the plan in plain words), `uv run berth plan examples/late-shift-infeasible.yaml --shortfall-policy fair` (share the shortfall instead of getting the most vehicles ready), `uv run berth plan --help`.
 
 Part of the output for the example vans (made-up data):
 
@@ -63,6 +63,7 @@ A fleet is one YAML (or JSON) file. This is a small but complete one:
 name: My depot
 start: "16:00"            # plan start (default: the earliest arrival)
 step_minutes: 15          # 5, 10, 15, 20, 30 or 60
+shortfall_policy: most_ready   # only used when not every vehicle can be ready (see below)
 site:
   power_limit_kw: 150     # most power the whole site may take
   other_load_kw:          # building load; charging can use the limit minus this
@@ -96,6 +97,7 @@ vehicles:
 | `power_limit_kw`, `other_load_kw`, `energy_price_per_kwh` | one number, a list of 24 hourly values, or periods `{from, to, value}` (`price` or `kw` also work as the value name) |
 | `billing_days` | a one-day plan carries 1/30 of the monthly demand charge by default. Set it to 1 to count the full charge. |
 | `hours`, `time_limit_s` | plan length (default: until the last departure) and solver time limit (default 30 s) |
+| `shortfall_policy` | what to do when not every vehicle can be ready: `most_ready` (default) or `fair`. See "When not every vehicle can be ready" below. |
 
 **Times:** a departure earlier than the arrival means the next day. Berth rounds each arrival up and each departure down to the time step, so a vehicle only charges in steps where it is parked the whole time.
 
@@ -129,12 +131,16 @@ Input error: my-vans.csv: line 3: battery_kwh 'eighty' is not a number
    * the battery never goes above 100 %;
    * in each step, no more vehicles charge than there are chargers (per charger power group).
 3. **Goals, in this order:**
-   1. *Readiness.* Every vehicle reaches its required level at departure. If that is impossible, Berth makes the **biggest** shortfall as small as possible, then the total shortfall. So it gives energy first to the vehicles that would be most short.
+   1. *Readiness.* Every vehicle reaches its required level at departure. If that is impossible, the `shortfall_policy` decides (see point 6).
    2. *Cost.* Energy cost (price × grid energy in each step) plus the demand charge (rate × peak kW).
    3. *Tidy.* At the same lowest cost: a lower peak, and vehicles that leave first charge first, so each vehicle gets one block of charging where possible.
 4. **Solver.** It is a linear program, solved with the open-source [HiGHS](https://highs.dev) solver. When a step has more parked vehicles than chargers, Berth adds on/off variables for that step only, which makes it a mixed-integer program. For large cases it first solves an easier version and fixes the chargers a few hours at a time, then checks the answer against a proven lower bound. It stops when the cost is proven to be within 1 % of the lowest possible cost, or at the time limit; the result says which.
-5. **Baseline.** "Charge on arrival" means every vehicle charges at full power from the moment it arrives until it is ready, first come first served for chargers and site power. The solver starts from this plan. So the Berth plan is never less ready than the baseline, and, when the baseline gets everyone ready, never more expensive.
-6. **When not every vehicle can be ready,** Berth still returns the best partial plan and says, for each vehicle that falls short, how many kWh are missing and why:
+5. **Baseline.** "Charge on arrival" means every vehicle charges at full power from the moment it arrives until it is ready, first come first served for chargers and site power. The solver starts from this plan. So the Berth plan is never less ready than the baseline (with `most_ready`: never fewer vehicles fully ready; with `fair`: never a bigger shortfall that could be avoided), and, when the baseline gets everyone ready, never more expensive.
+6. **When not every vehicle can be ready,** Berth still returns the best partial plan. You choose how with `shortfall_policy`:
+   * `most_ready` (default): a fleet manager first wants to know how many vehicles can run their routes. Berth gets as many vehicles **fully ready** as possible. Then, keeping that number, it makes the biggest shortfall of the other vehicles as small as possible, then their total shortfall, and only then looks at cost. It uses one on/off variable per vehicle to count the ready vehicles.
+   * `fair`: Berth makes the **biggest** shortfall over all vehicles as small as possible, then the total. Every vehicle gets some charge, but fewer vehicles may be fully ready.
+
+   Set it in the fleet file (`shortfall_policy: fair`), on the command line (`--shortfall-policy fair`), in the API (`?shortfall_policy=fair`) or in the MCP tools (`shortfall_policy`). For each vehicle that falls short, Berth says how many kWh are missing and why:
    * `not_enough_time`: even alone at full power the whole time it is parked, it cannot get there;
    * `site_limit`: with unlimited site power the shortfall would be smaller;
    * `too_few_chargers`: with unlimited chargers the shortfall would be smaller.
@@ -147,7 +153,7 @@ Input error: my-vans.csv: line 3: battery_kwh 'eighty' is not a number
 
 ## Results on the example fleets
 
-Made-up example data. "On arrival" is the baseline: every vehicle charges at full power from arrival. Costs are for one plan window (about one day), with 1/30 of the monthly demand charge. Produced by this command (solve time depends on the computer):
+Made-up example data. "On arrival" is the baseline: every vehicle charges at full power from arrival. Costs are for one plan window (about one day), with 1/30 of the monthly demand charge. The infeasible example is shown with both shortfall policies. Produced by this command (solve time depends on the computer):
 
 ```bash
 uv run python scripts/example_results.py
@@ -156,12 +162,13 @@ uv run python scripts/example_results.py
 | Example | Vehicles | Chargers | Ready (Berth / on arrival) | Cost (Berth / on arrival) | Saving | Peak charging kW (Berth / on arrival) | Biggest shortfall kWh (Berth / on arrival) | Solve time |
 |---|---|---|---|---|---|---|---|---|
 | delivery-vans | 12 | 12 x 19.2 kW | 12 / 12 | $107.97 / $240.43 | $132.46 (55.1%) | 73 / 138 | 0.0 / 0.0 | 0.0 s |
-| late-shift-infeasible | 11 | 4 x 22 kW | 5 / 8 | $94.28 / $90.62 | -$3.66 (-4.0%) | 55 / 55 | 43.8 / 67.5 | 0.6 s |
-| school-buses | 30 | 4 x 60 kW + 20 x 19.2 kW | 30 / 30 | $824.86 / $1,262.64 | $437.78 (34.7%) | 380 / 380 | 0.0 / 0.0 | 6.4 s |
+| late-shift-infeasible | 11 | 4 x 22 kW | 9 / 8 | $94.28 / $90.62 | -$3.66 (-4.0%) | 55 / 55 | 57.0 / 67.5 | 2.7 s |
+| late-shift-infeasible (shortfall_policy: fair) | 11 | 4 x 22 kW | 5 / 8 | $94.28 / $90.62 | -$3.66 (-4.0%) | 55 / 55 | 43.8 / 67.5 | 0.8 s |
+| school-buses | 30 | 4 x 60 kW + 20 x 19.2 kW | 30 / 30 | $824.86 / $1,262.64 | $437.78 (34.7%) | 380 / 380 | 0.0 / 0.0 | 7.5 s |
 
 * **Delivery vans:** charging moves out of the 16:00–21:00 price peak into the night, and the peak charging power is about half, so the demand charge is lower too.
 * **School buses:** 24 chargers for 30 buses, with a midday break and the night. Both plans reach the site limit at some point, so here the saving comes from the energy price: charging moves out of the evening peak.
-* **Late shift (cannot be fully charged):** charging on arrival gets more vans fully ready, but it does that by leaving SHORT-STOP far behind. Berth makes the biggest shortfall as small as possible instead: each early van is a little short (6.6 kWh) and SHORT-STOP gets more energy. Berth also delivers more energy in total (500.0 vs 480.7 kWh), which is why its cost is a little higher. It reports that SHORT-STOP is not parked long enough to be ready, and that about 8 kW more site capacity would be enough for every other van.
+* **Late shift (cannot be fully charged):** 11 vans, 4 chargers and a small site connection. With the default `most_ready` policy, Berth gets 9 vans fully ready, one more than charging on arrival (8). Only EARLY-5 (19.9 kWh short) and SHORT-STOP (57.0 kWh short) fall short, and even the biggest shortfall is smaller than with charging on arrival (67.5 kWh). With `shortfall_policy: fair`, Berth shares the shortfall instead: the biggest shortfall drops to 43.8 kWh, but only 5 vans are fully ready (every EARLY van is 6.6 kWh short). In both cases Berth delivers more energy than charging on arrival (500.0 vs 480.7 kWh), which is why its cost is a little higher. It also reports that SHORT-STOP is not parked long enough to be ready, and that about 8 kW more site capacity would be enough for every other van.
 
 ## Web page
 
@@ -195,7 +202,7 @@ curl -s -X POST http://127.0.0.1:8000/api/explain -H "Content-Type: application/
 
 | Endpoint | What it does |
 | --- | --- |
-| `POST /api/plan` | plan a fleet (JSON). Returns the schedule, costs, savings, shortfalls and notes. |
+| `POST /api/plan` | plan a fleet (JSON). Returns the schedule, costs, savings, shortfalls and notes. Optional `?shortfall_policy=most_ready` or `fair` (overrides the fleet's setting; also on the other plan endpoints). |
 | `POST /api/plan/yaml` | the same, with the fleet as YAML text |
 | `POST /api/schedule.csv` | the schedule as CSV |
 | `POST /api/explain` | the plan explained in plain words |
@@ -213,7 +220,7 @@ Two tools for AI assistants:
 | `plan_charging` | plan a fleet and return the key numbers as JSON: cost, peak and readiness for the plan and for charging on arrival, charging windows per vehicle, shortfalls with reasons. `include_schedule: true` adds kW per vehicle per step. |
 | `explain_plan` | plan a fleet and explain the result in plain words |
 
-Give the fleet as `fleet` (an object), `fleet_yaml` (text), or `example` (`delivery-vans`, `school-buses`, `late-shift-infeasible`).
+Give the fleet as `fleet` (an object), `fleet_yaml` (text), or `example` (`delivery-vans`, `school-buses`, `late-shift-infeasible`). Both tools also take `shortfall_policy` (`most_ready` or `fair`).
 
 Add this to your client's config (`claude_desktop_config.json` for Claude Desktop, `.cursor/mcp.json` for Cursor):
 
@@ -244,8 +251,8 @@ docker run --rm berth berth plan --example delivery-vans --no-csv    # command l
 * **Chargers are counted, not assigned** (see "Simplification" above).
 * **Charging power is flat.** Real batteries charge slower when nearly full. Berth uses one `max_kw` per vehicle; set it a bit lower if your vehicles slow down a lot.
 * **Simple tariffs.** One price per time step, one demand charge per kW. No weekday/weekend tariffs, tiers or export prices yet.
-* **Fairness, not count.** When not everyone can be ready, Berth shares the shortfall (smallest biggest shortfall). It does not try to get the largest *number* of vehicles fully ready.
-* **Large, crowded sites can be slow.** Many vehicles sharing few chargers is a hard puzzle. Berth stops at the time limit and says how close to the best cost it is.
+* **No vehicle priorities.** `most_ready` counts every vehicle the same. It does not know that one route matters more than another.
+* **Large, crowded sites can be slow.** Many vehicles sharing few chargers is a hard puzzle, and it is hardest when not everyone can be ready: with `most_ready`, each step after counting the ready vehicles gets a share of the time limit. Berth stops at the time limit and the result says so.
 * **No login.** The server listens on `127.0.0.1` by default. Add your own security before you share it.
 
 ## Next ideas
@@ -253,7 +260,7 @@ docker run --rm berth berth plan --example delivery-vans --no-csv    # command l
 * **V2G:** let parked vehicles send power back to the site at peak times.
 * **Live telematics:** read battery levels and arrival times from the vehicles and re-plan during the night.
 * **Solar and storage** at the depot, and export prices.
-* An option to get the **most vehicles fully ready**, instead of the smallest biggest shortfall.
+* **Vehicle priorities:** say which routes must run first when not every vehicle can be ready.
 * Exact charger assignment (which vehicle on which charger) and plug-in time rules.
 * Weekday and seasonal tariffs, and plans over a full billing month.
 
@@ -291,7 +298,7 @@ print(result.headline)
 uv run pytest
 ```
 
-The tests check that every vehicle reaches its required level, that no limit is ever broken (site, chargers, vehicle and charger power, full battery), that the plan never costs more than charging on arrival when that gets everyone ready, that shortfalls and their reasons are reported, the API, command line and MCP round trips, and clear errors for bad YAML and CSV. CI runs them on Python 3.11, 3.12 and 3.13, and builds the Docker image.
+The tests check that every vehicle reaches its required level, that no limit is ever broken (site, chargers, vehicle and charger power, full battery), that the plan never costs more than charging on arrival when that gets everyone ready, that with the default policy the plan never has fewer vehicles fully ready than charging on arrival (and with `fair` never a bigger avoidable shortfall), that shortfalls and their reasons are reported, the API, command line and MCP round trips, and clear errors for bad YAML and CSV. CI runs them on Python 3.11, 3.12 and 3.13, and builds the Docker image.
 
 ## Background
 
