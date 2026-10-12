@@ -9,9 +9,10 @@ Run it with the `berth-mcp` command (stdio transport).
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any
 
 from mcp.server.mcpserver import MCPServer
+from pydantic import PlainValidator
 
 from berth import __version__
 from berth.errors import BerthInputError, BerthSolverError
@@ -42,6 +43,11 @@ means the next day.
 """
 
 server = MCPServer("berth", instructions=INSTRUCTIONS, version=__version__)
+
+# The tools publish the full Fleet schema, but take the fleet as it comes and
+# check it with parse_fleet, so mistakes come back as Berth's plain problems
+# list (like fleet_yaml and the HTTP API) instead of raw pydantic text.
+FleetArg = Annotated[Any, PlainValidator(lambda value: value, json_schema_input_type=Fleet | None)]
 
 
 def _get_fleet(
@@ -126,7 +132,7 @@ def _error(exc: Exception) -> dict[str, Any]:
 
 @server.tool()
 def plan_charging(
-    fleet: Fleet | None = None,
+    fleet: FleetArg = None,
     fleet_yaml: str | None = None,
     example: str | None = None,
     include_schedule: bool = False,
@@ -150,7 +156,7 @@ def plan_charging(
 
 @server.tool()
 def explain_plan(
-    fleet: Fleet | None = None,
+    fleet: FleetArg = None,
     fleet_yaml: str | None = None,
     example: str | None = None,
     shortfall_policy: ShortfallPolicy | None = None,

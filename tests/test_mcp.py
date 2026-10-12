@@ -52,6 +52,18 @@ def test_errors_come_back_as_text_not_crashes():
     assert explain_plan(example="nope").startswith("Berth could not plan this fleet")
 
 
+def test_bad_fleet_object_gets_the_plain_problems_list():
+    result = asyncio.run(server.call_tool(
+        "plan_charging", {"fleet": {"site": {"power_limit_kw": 50}, "tariff": {}, "vehicles": []}}
+    ))
+    data = json.loads(_text(result))
+    assert "tariff.energy_price_per_kwh: is required but missing" in data["problems"]
+    assert "pydantic" not in _text(result)
+    tools = asyncio.run(server.list_tools())
+    plan_tool = next(t for t in tools if t.name == "plan_charging")
+    assert "Fleet" in plan_tool.input_schema["$defs"]  # the schema is still published
+
+
 def test_shortfall_policy_parameter():
     most = plan_charging(example="late-shift-infeasible")
     fair = plan_charging(example="late-shift-infeasible", shortfall_policy="fair")
