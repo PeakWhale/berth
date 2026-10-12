@@ -70,6 +70,7 @@ class Problem:
     vehicles: list[VehicleData]
     time_limit_s: float
     notes: list[str] = field(default_factory=list)
+    shortfall_policy: str = "most_ready"  # or "fair"; see Fleet.shortfall_policy
 
     @property
     def dt(self) -> float:
@@ -330,6 +331,7 @@ def build_problem(fleet: Fleet) -> Problem:
         vehicles=vehicles,
         time_limit_s=fleet.time_limit_s,
         notes=notes,
+        shortfall_policy=fleet.shortfall_policy,
     )
 
 

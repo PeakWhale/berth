@@ -6,7 +6,7 @@ the MCP server.
 
 from __future__ import annotations
 
-from typing import Annotated, Union
+from typing import Annotated, Literal, Union
 
 from pydantic import (
     AliasChoices,
@@ -310,6 +310,10 @@ class Vehicle(BaseModel):
         ]
 
 
+ShortfallPolicy = Literal["most_ready", "fair"]
+SHORTFALL_POLICIES: tuple[str, ...] = ("most_ready", "fair")
+
+
 class Fleet(BaseModel):
     """Everything Berth needs to plan charging."""
 
@@ -327,6 +331,13 @@ class Fleet(BaseModel):
     )
     step_minutes: int = Field(15, description="Time step in minutes: 5, 10, 15, 20, 30 or 60.")
     time_limit_s: float = Field(30.0, gt=0, le=600, description="Time limit for the solver, seconds.")
+    shortfall_policy: ShortfallPolicy = Field(
+        "most_ready",
+        description="What to do when not every vehicle can be ready. most_ready (default): get as many "
+        "vehicles fully ready as possible, then keep the biggest shortfall of the others as small as "
+        "possible. fair: keep the biggest shortfall as small as possible over all vehicles, even if "
+        "fewer vehicles are fully ready.",
+    )
     site: Site
     tariff: Tariff
     vehicles: list[Vehicle] = Field(min_length=1)
