@@ -312,9 +312,9 @@ uv run pytest
 
 The tests check that every vehicle reaches its required level, that no limit is ever broken (site, chargers, vehicle and charger power, full battery), that the plan never costs more than charging on arrival when that gets everyone ready, that with the default policy the plan never has fewer vehicles fully ready than charging on arrival (and with `fair` never a bigger avoidable shortfall), that shortfalls and their reasons are reported, the API, command line and MCP round trips, and clear errors for bad YAML and CSV. CI runs them on Python 3.11, 3.12 and 3.13, and builds the Docker image.
 
-## Background
+## Related reading
 
-The ideas behind Berth are in this whitepaper: [Planning EV charging around fleet operations: connecting vehicle readiness, site capacity, and energy cost to a feasible charging schedule](https://adrkv.github.io/ev-charging-operations.html).
+A whitepaper by the author on the same topic: [Planning EV charging around fleet operations: connecting vehicle readiness, site capacity, and energy cost to a feasible charging schedule](https://adrkv.github.io/ev-charging-operations.html).
 
 ## Part of the PeakWhale™ fleet
 
