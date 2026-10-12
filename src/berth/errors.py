@@ -44,9 +44,18 @@ def _vehicle_label(data: Any, index: int) -> str:
 def format_validation_error(exc: ValidationError, data: Any = None) -> list[str]:
     """Turn a pydantic error into short lines like
     "vehicle 3 (VAN-03): battery_kwh: Input should be greater than 0"."""
+    return format_error_list(exc.errors(), data)
+
+
+def format_error_list(
+    errors: list[dict], data: Any = None, drop_prefix: tuple = (), prefix: tuple = ()
+) -> list[str]:
     lines: list[str] = []
-    for err in exc.errors():
+    for err in errors:
         loc = list(err.get("loc", ()))
+        if drop_prefix and tuple(loc[: len(drop_prefix)]) == tuple(drop_prefix):
+            loc = loc[len(drop_prefix):]
+        loc = list(prefix) + loc
         parts: list[str] = []
         i = 0
         while i < len(loc):

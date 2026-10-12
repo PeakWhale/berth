@@ -39,9 +39,22 @@ def parse_yaml_text(text: str, source: str = "input") -> dict:
 
 
 def load_fleet_text(text: str, source: str = "input", base_dir: Path | None = None) -> Fleet:
-    """Parse YAML (or JSON, which is also YAML) text into a Fleet."""
+    """Parse YAML (or JSON, which is also YAML) text into a Fleet.
+
+    File names (like `tariff: tariff.yaml`) are only followed when base_dir
+    is given. The HTTP API never passes it, so a request cannot read files
+    on the server."""
     data = parse_yaml_text(text, source)
-    data = resolve_references(data, base_dir or Path.cwd(), source)
+    if base_dir is not None:
+        data = resolve_references(data, base_dir, source)
+    else:
+        for key, what in (("tariff", "the tariff"), ("vehicles", "the vehicles")):
+            if isinstance(data.get(key), str):
+                raise BerthInputError(
+                    f"{key}: '{data[key]}' looks like a file name. Here {what} must be written out in full "
+                    "(file names only work on the command line).",
+                    source,
+                )
     return parse_fleet(data, source)
 
 
@@ -249,3 +262,57 @@ def parse_chargers(spec: str) -> list[dict]:
             raise BerthInputError(f"'{part}' is not a charger group. Use COUNTxKW, like 8x19.2 or 8x19.2,2x50")
         groups.append({"count": int(m.group(1)), "kw": float(m.group(2))})
     return groups
+
+
+# ---------------------------------------------------------------------------
+# Writing YAML
+
+
+def _scalar(v: Any) -> str:
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    if isinstance(v, (int, float)):
+        return f"{v:g}" if isinstance(v, float) else str(v)
+    text = str(v)
+    return json.dumps(text) if text == "" or re.search(r"[:#{}\[\],&*?|<>=!%@`'\"]|^\s|\s$|^[-\d]", text) or text.lower() in {
+        "true", "false", "yes", "no", "on", "off", "null", "~"} else text
+
+
+def _flow(v: Any) -> str:
+    if isinstance(v, dict):
+        return "{" + ", ".join(f"{k}: {_flow(x)}" for k, x in v.items()) + "}"
+    if isinstance(v, list):
+        return "[" + ", ".join(_flow(x) for x in v) + "]"
+    return _scalar(v)
+
+
+def fleet_to_yaml(fleet: Fleet) -> str:
+    """Readable YAML for a fleet: one line per vehicle (or per stop)."""
+    data = fleet.model_dump(by_alias=True, exclude_none=True, exclude_defaults=False)
+    lines: list[str] = []
+    for key in ("name", "description", "start", "hours", "step_minutes", "time_limit_s"):
+        if key in data:
+            lines.append(f"{key}: {_scalar(data[key])}")
+    names = {"energy_price_per_kwh": "price", "power_limit_kw": "kw", "other_load_kw": "kw"}
+    for section in ("site", "tariff"):
+        lines.append(f"{section}:")
+        for k, v in data[section].items():
+            if isinstance(v, list) and k in names and v and isinstance(v[0], dict):
+                v = [{"from": x["from"], "to": x["to"], names[k]: x["value"]} for x in v]
+            if isinstance(v, list):
+                lines.append(f"  {k}:")
+                lines.extend(f"    - {_flow(x)}" for x in v)
+            else:
+                lines.append(f"  {k}: {_flow(v)}")
+    lines.append("vehicles:")
+    for veh in data["vehicles"]:
+        stops = veh.pop("stops", None)
+        if stops:
+            stops = [{k: x for k, x in st.items() if not (k == "trip_kwh" and x == 0)} for st in stops]
+            lines.append(f"  - {_flow(veh)[:-1]}, stops: [")
+            lines.extend(f"      {_flow(s)}," for s in stops)
+            lines[-1] = lines[-1].rstrip(",")
+            lines.append("    ]}")
+        else:
+            lines.append(f"  - {_flow(veh)}")
+    return "\n".join(lines) + "\n"
