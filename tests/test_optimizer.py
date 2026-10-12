@@ -140,11 +140,6 @@ def test_demand_charge_flattens_peak():
     assert m.demand_cost < base.demand_cost
 
 
-def _max_avoidable(prob, metrics) -> float:
-    unavoidable = prob.unavoidable_kwh()
-    return max((o.shortfall_kwh - u for o, u in zip(metrics.stops, unavoidable)), default=0.0)
-
-
 @pytest.mark.parametrize("seed", range(12))
 def test_random_fleets_valid_and_not_worse_than_baseline(seed):
     # Some of these small fleets share very few chargers and are hard to
@@ -153,8 +148,8 @@ def test_random_fleets_valid_and_not_worse_than_baseline(seed):
     prob, opt, m, base = solve(random_fleet(seed), time_limit=10)
     assert_valid(prob, opt.power)
     assert_valid(prob, baseline_power(prob))
-    # the biggest avoidable shortfall is never worse than charging on arrival
-    assert _max_avoidable(prob, m) <= _max_avoidable(prob, base) + 0.01
+    # never fewer vehicles ready than charging on arrival (default policy most_ready)
+    assert m.vehicles_ready >= base.vehicles_ready
     if base.all_ready:
         assert m.all_ready
         assert m.total_cost <= base.total_cost + 1e-6

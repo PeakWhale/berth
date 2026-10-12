@@ -19,7 +19,9 @@ def test_tools_are_listed():
     names = {t.name for t in tools}
     assert {"plan_charging", "explain_plan"} <= names
     plan_tool = next(t for t in tools if t.name == "plan_charging")
-    assert {"fleet", "fleet_yaml", "example", "include_schedule"} <= set(plan_tool.input_schema["properties"])
+    assert {"fleet", "fleet_yaml", "example", "include_schedule", "shortfall_policy"} <= set(
+        plan_tool.input_schema["properties"]
+    )
 
 
 def test_plan_charging_through_server():
@@ -48,3 +50,11 @@ def test_errors_come_back_as_text_not_crashes():
     assert "error" in data and data["problems"]
     assert "give exactly one" in plan_charging()["error"]
     assert explain_plan(example="nope").startswith("Berth could not plan this fleet")
+
+
+def test_shortfall_policy_parameter():
+    most = plan_charging(example="late-shift-infeasible")
+    fair = plan_charging(example="late-shift-infeasible", shortfall_policy="fair")
+    assert most["shortfall_policy"] == "most_ready" and fair["shortfall_policy"] == "fair"
+    assert most["optimized"]["vehicles_ready"] > fair["optimized"]["vehicles_ready"]
+    assert "error" in plan_charging(example="late-shift-infeasible", shortfall_policy="best")

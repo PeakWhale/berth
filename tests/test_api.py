@@ -105,3 +105,19 @@ def test_convert_endpoints(client):
     bad = client.post("/api/convert/vehicles-csv", content="id,battery_kwh\nV1,80\n", headers={"Content-Type": "text/plain"})
     assert bad.status_code == 400
     assert "missing column" in bad.json()["error"]
+
+
+def test_shortfall_policy_in_body_and_query(client):
+    fleet = client.get("/api/examples/late-shift-infeasible").json()
+    assert fleet["shortfall_policy"] == "most_ready"
+    most = client.post("/api/plan", json=fleet).json()
+    fair = client.post("/api/plan?shortfall_policy=fair", json=fleet).json()
+    assert most["shortfall_policy"] == "most_ready" and fair["shortfall_policy"] == "fair"
+    assert most["optimized"]["vehicles_ready"] >= most["baseline"]["vehicles_ready"]
+    assert most["optimized"]["vehicles_ready"] > fair["optimized"]["vehicles_ready"]
+    fleet["shortfall_policy"] = "fair"
+    assert client.post("/api/plan", json=fleet).json()["shortfall_policy"] == "fair"
+    fleet["shortfall_policy"] = "best"
+    bad = client.post("/api/plan", json=fleet)
+    assert bad.status_code == 422
+    assert any("shortfall_policy" in p for p in bad.json()["problems"])

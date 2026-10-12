@@ -71,6 +71,14 @@ def test_bad_time_is_explained():
     assert "'25:00' is not a valid" in problems_of(e)
 
 
+def test_shortfall_policy_values():
+    assert parse_fleet(make_fleet([van(1)])).shortfall_policy == "most_ready"
+    assert parse_fleet({**make_fleet([van(1)]), "shortfall_policy": "fair"}).shortfall_policy == "fair"
+    with pytest.raises(BerthInputError) as e:
+        parse_fleet({**make_fleet([van(1)]), "shortfall_policy": "best"})
+    assert "shortfall_policy: Input should be 'most_ready' or 'fair'" in problems_of(e)
+
+
 def test_duplicate_vehicle_ids():
     with pytest.raises(BerthInputError, match="unique"):
         parse_fleet(make_fleet([van(1), van(1)]))

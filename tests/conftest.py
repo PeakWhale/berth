@@ -83,6 +83,36 @@ def random_fleet(seed: int) -> dict:
     return f
 
 
+def short_fleet(seed: int) -> dict:
+    """Random small fleets where usually not every vehicle can be ready:
+    a tight site limit, short stays and sometimes fewer chargers than vans."""
+    rng = random.Random(1000 + seed)
+    n = rng.randint(3, 7)
+    vehicles = []
+    for i in range(n):
+        arr = rng.randrange(17 * 60, 23 * 60, 15)
+        dep = (arr + int(rng.choice([1.5, 3, 5, 8, 11]) * 60)) % (24 * 60)
+        vehicles.append(
+            van(
+                i,
+                battery_kwh=rng.choice([60, 80, 100]),
+                max_kw=rng.choice([7.4, 11, 22]),
+                arrival=f"{arr // 60:02d}:{arr % 60:02d}",
+                departure=f"{dep // 60:02d}:{dep % 60:02d}",
+                arrival_soc_pct=rng.randint(5, 40),
+                required_soc_pct=rng.choice([80, 90, 100]),
+            )
+        )
+    f = make_fleet(
+        vehicles,
+        power_limit_kw=rng.choice([15, 25, 40]),
+        chargers=[{"count": rng.choice([n, n, max(1, n - 2)]), "kw": 22}],
+    )
+    f["start"] = "17:00"
+    f["tariff"]["demand_charge_per_kw"] = rng.choice([0.0, 12.0])
+    return f
+
+
 def solve(fleet: dict, time_limit: float | None = None):
     """Build, optimize and evaluate. Returns (problem, opt output, metrics, baseline metrics)."""
     prob = build_problem(Fleet.model_validate(fleet))

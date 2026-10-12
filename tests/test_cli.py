@@ -58,3 +58,11 @@ def test_explain_and_examples(capsys):
     assert "Why some vehicles fall short" in text
     assert main(["examples"]) == 0
     assert "school-buses" in capsys.readouterr().out
+
+
+def test_shortfall_policy_flag(capsys):
+    assert main(["plan", "--example", "late-shift-infeasible", "--no-csv", "--shortfall-policy", "fair"]) == 0
+    out = capsys.readouterr().out
+    assert "Policy fair" in out
+    assert main(["plan", "--example", "late-shift-infeasible", "--no-csv"]) == 0
+    assert "Policy most_ready" in capsys.readouterr().out
