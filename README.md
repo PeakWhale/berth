@@ -309,7 +309,7 @@ The ideas behind Berth are in this whitepaper: [Planning EV charging around flee
 * **PeakWhale™ Helm**: research assistant over your own data.
 * **PeakWhale™ Orca**: real-time fraud detection.
 * **PeakWhale™ Harbor**: valuation and forecasting.
-* **PeakWhale™ Trident**
+* **PeakWhale™ Trident**: fail-safe triage engine, AI plus editable rules; unclear cases go to a person.
 * **PeakWhale™ Berth**: EV fleet charging planner.
 
 ## License
