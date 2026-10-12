@@ -2,21 +2,23 @@
 #   docker build -t berth .
 #   docker run --rm -p 8000:8000 berth            # then open http://localhost:8000
 #   docker run --rm berth berth plan --example delivery-vans --no-csv
-FROM python:3.12-slim
+# Another Python base image: docker build --build-arg PYTHON_IMAGE=python:3.13-slim -t berth .
+ARG PYTHON_IMAGE=python:3.12-slim
+FROM ${PYTHON_IMAGE}
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy
 
-COPY --from=ghcr.io/astral-sh/uv:0.11 /uv /usr/local/bin/uv
+RUN pip install --no-cache-dir uv==0.11.32
 
 WORKDIR /app
 COPY pyproject.toml uv.lock README.md LICENSE ./
 RUN uv sync --frozen --no-dev --no-install-project
 COPY src ./src
 COPY examples ./examples
-RUN uv sync --frozen --no-dev
+RUN uv sync --frozen --no-dev --no-editable
 
 ENV PATH="/app/.venv/bin:$PATH"
 RUN useradd --create-home berth
