@@ -33,21 +33,8 @@ class Diagnosis:
     extra_site_kw: float | None = None
     extra_chargers: int | None = None
     extra_charger_kw: float | None = None
+    both_needed: bool = False
     summary: list[str] = field(default_factory=list)
-
-
-def alone_max_kwh(prob: Problem, v: int) -> list[float]:
-    """Battery level at each departure if this vehicle charged alone at full
-    power the whole time it is parked (no site limit, its own charger)."""
-    veh = prob.vehicles[v]
-    rate = prob.charge_rate(v)
-    energy = veh.arrival_kwh
-    out = []
-    for s in veh.stops:
-        energy -= s.trip_kwh
-        energy = min(veh.battery_kwh, energy + prob.efficiency * prob.dt * rate * len(s.steps))
-        out.append(energy)
-    return out
 
 
 def _min_total_shortfall(prob: Problem, time_limit: float, **flags) -> float | None:
@@ -58,8 +45,18 @@ def _min_total_shortfall(prob: Problem, time_limit: float, **flags) -> float | N
     return float(sum(r.x[j] for j in model.s))
 
 
-def _min_extra(prob: Problem, unavoidable: list[float], what: str, time_limit: float) -> float | None:
-    model = ChargingModel(prob, extra_site=(what == "site"), extra_chargers=(what == "chargers"))
+def _min_extra(
+    prob: Problem, unavoidable: list[float], what: str, time_limit: float, other_limit: bool = True
+) -> float | None:
+    """Smallest extra site kW (or extra chargers) so that every vehicle gets
+    all it can. other_limit=False removes the other limit at the same time."""
+    model = ChargingModel(
+        prob,
+        extra_site=(what == "site"),
+        extra_chargers=(what == "chargers"),
+        site_limit=(what == "site") or other_limit,
+        charger_limit=(what == "chargers") or other_limit,
+    )
     var = model.x_site if what == "site" else model.x_chg
     bounds = {j: (0.0, u + 0.005) for j, u in zip(model.s, unavoidable)}
     r = model.m.solve({var: 1.0}, bounds=bounds, time_limit=time_limit)
@@ -80,7 +77,7 @@ def diagnose(prob: Problem, metrics: Metrics, time_limit: float) -> Diagnosis | 
     unavoidable: list[float] = []
     alone: dict[tuple[str, int], float] = {}
     for v, veh in enumerate(prob.vehicles):
-        for s, best in zip(veh.stops, alone_max_kwh(prob, v)):
+        for s, best in zip(veh.stops, prob.alone_max_kwh(v)):
             u = max(0.0, s.required_kwh - best)
             unavoidable.append(u)
             d.unavoidable_kwh[(veh.id, s.number)] = u
@@ -98,16 +95,19 @@ def diagnose(prob: Problem, metrics: Metrics, time_limit: float) -> Diagnosis | 
             d.binding.append(SITE)
         if w_chg is not None and w_chg < total_short - READY_TOL_KWH:
             d.binding.append(CHARGERS)
-        if not d.binding:
-            d.binding = [SITE, CHARGERS]
         site_fixes = w_site is not None and w_site <= total_unavoidable + READY_TOL_KWH
         chg_fixes = w_chg is not None and w_chg <= total_unavoidable + READY_TOL_KWH
-        if site_fixes:
-            extra = _min_extra(prob, unavoidable, "site", budget)
+        if not (site_fixes or chg_fixes):
+            d.both_needed = True
+            d.binding = [SITE, CHARGERS]
+        # how much more is needed (with the other limit as it is, or, when
+        # both are needed, with the other limit removed)
+        if site_fixes or d.both_needed:
+            extra = _min_extra(prob, unavoidable, "site", budget, other_limit=not d.both_needed)
             if extra is not None:
                 d.extra_site_kw = float(math.ceil(extra - 1e-6))
-        if chg_fixes:
-            extra = _min_extra(prob, unavoidable, "chargers", budget)
+        if chg_fixes or d.both_needed:
+            extra = _min_extra(prob, unavoidable, "chargers", budget, other_limit=not d.both_needed)
             if extra is not None:
                 d.extra_chargers = int(round(extra))
                 d.extra_charger_kw = prob.max_charger_kw
@@ -169,16 +169,23 @@ def diagnose(prob: Problem, metrics: Metrics, time_limit: float) -> Diagnosis | 
             f"{', '.join(timed)}: not parked long enough to be ready even with unlimited site power "
             "and chargers. Move the departure later, plan an earlier arrival, or use a faster charger."
         )
-    if d.extra_site_kw is not None:
-        d.summary.append(
-            f"About {d.extra_site_kw:g} kW more site capacity (or that much less other load at the busy "
-            "times) would be enough for every vehicle that has enough time."
-        )
-    if d.extra_chargers is not None:
-        d.summary.append(
-            f"{d.extra_chargers} more {d.extra_charger_kw:g} kW charger(s) would be enough for every "
-            "vehicle that has enough time."
-        )
-    if avoidable > READY_TOL_KWH and d.extra_site_kw is None and d.extra_chargers is None:
-        d.summary.append("Neither more site power alone nor more chargers alone is enough: both limits hold charging back.")
+    if d.both_needed:
+        d.summary.append("Neither more site power alone nor more chargers alone is enough: both hold charging back.")
+        if d.extra_site_kw is not None:
+            d.summary.append(f"With enough chargers, about {d.extra_site_kw:g} kW more site capacity would be needed.")
+        if d.extra_chargers is not None:
+            d.summary.append(
+                f"With enough site power, {d.extra_chargers} more {d.extra_charger_kw:g} kW charger(s) would be needed."
+            )
+    else:
+        if d.extra_site_kw is not None:
+            d.summary.append(
+                f"About {d.extra_site_kw:g} kW more site capacity (or that much less other load at the busy "
+                "times) would be enough for every vehicle that has enough time."
+            )
+        if d.extra_chargers is not None:
+            d.summary.append(
+                f"{d.extra_chargers} more {d.extra_charger_kw:g} kW charger(s) would be enough for every "
+                "vehicle that has enough time."
+            )
     return d

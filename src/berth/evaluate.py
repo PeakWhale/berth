@@ -60,6 +60,12 @@ class Metrics:
     def shortfall_kwh(self) -> float:
         return sum(o.shortfall_kwh for o in self.stops if not o.ready)
 
+    @property
+    def worst(self) -> StopOutcome | None:
+        """The stop with the biggest shortfall (None if all are ready)."""
+        short = [o for o in self.stops if not o.ready]
+        return max(short, key=lambda o: o.shortfall_kwh) if short else None
+
 
 def evaluate(prob: Problem, power: np.ndarray) -> Metrics:
     total = power.sum(axis=0)

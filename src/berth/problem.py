@@ -97,6 +97,28 @@ class Problem:
         """Fastest power vehicle v can take from the fastest charger."""
         return min(self.vehicles[v].max_kw, self.max_charger_kw)
 
+    def alone_max_kwh(self, v: int) -> list[float]:
+        """Battery level at each departure if this vehicle charged alone at
+        full power the whole time it is parked (no site limit, its own
+        charger). Anything it needs above this can never be delivered."""
+        veh = self.vehicles[v]
+        rate = self.charge_rate(v)
+        energy = veh.arrival_kwh
+        out = []
+        for s in veh.stops:
+            energy -= s.trip_kwh
+            energy = min(veh.battery_kwh, energy + self.efficiency * self.dt * rate * len(s.steps))
+            out.append(energy)
+        return out
+
+    def unavoidable_kwh(self) -> list[float]:
+        """Per stop (in order): the shortfall no plan can avoid (not enough time)."""
+        out = []
+        for v, veh in enumerate(self.vehicles):
+            for s, best in zip(veh.stops, self.alone_max_kwh(v)):
+                out.append(max(0.0, s.required_kwh - best))
+        return out
+
     def present(self) -> list[list[int]]:
         """For each step, the vehicles that are parked."""
         out: list[list[int]] = [[] for _ in range(self.n_steps)]

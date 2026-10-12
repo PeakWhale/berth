@@ -60,6 +60,7 @@ def summary_text(r: "PlanResult", max_vehicles: int = 40) -> str:
         ["Peak site load", f"{o.peak_site_kw:,.1f} kW", f"{b.peak_site_kw:,.1f} kW"],
         ["Vehicles ready", f"{o.vehicles_ready} / {o.vehicles_total}", f"{b.vehicles_ready} / {b.vehicles_total}"],
         ["Energy short", f"{o.shortfall_kwh:,.1f} kWh", f"{b.shortfall_kwh:,.1f} kWh"],
+        ["Biggest shortfall", f"{o.max_shortfall_kwh:,.1f} kWh", f"{b.max_shortfall_kwh:,.1f} kWh"],
     ]
     out.append(_table(["", "Berth plan", "Charge on arrival"], rows, right={1, 2}))
     out.append("")

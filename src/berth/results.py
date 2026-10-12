@@ -51,7 +51,8 @@ class Totals(BaseModel):
     vehicles_ready: int
     vehicles_total: int
     all_ready: bool
-    shortfall_kwh: float
+    shortfall_kwh: float = Field(description="Total energy missing at departures, kWh.")
+    max_shortfall_kwh: float = Field(description="Biggest shortfall of one vehicle at one departure, kWh.")
 
 
 class Savings(BaseModel):

@@ -70,6 +70,7 @@ def _totals(m: Metrics) -> Totals:
         vehicles_total=m.vehicles_total,
         all_ready=m.all_ready,
         shortfall_kwh=_r(m.shortfall_kwh, 3),
+        max_shortfall_kwh=_r(m.worst.shortfall_kwh, 3) if m.worst else 0.0,
     )
 
 
@@ -195,10 +196,25 @@ def _build_result(prob, opt, m_opt: Metrics, base_power, m_base: Metrics, diag) 
             f"This plan counts {days:g}/{prob.billing_days:g} of it, as if every day of the month has "
             "the same peak. Only the part of the peak caused by charging is counted."
         )
-    if not m_base.all_ready:
+    if not m_opt.all_ready:
         notes.append(
-            f"The baseline leaves {V - m_base.vehicles_ready} vehicle(s) short, so its cost covers less energy."
+            "Not every vehicle can be ready. Berth gives energy first to the vehicles that would be most "
+            "short (it makes the biggest shortfall as small as possible, then the total), and only then "
+            "looks at cost."
         )
+    if not m_base.all_ready:
+        worst = m_base.worst
+        notes.append(
+            f"Charging on arrival leaves {V - m_base.vehicles_ready} vehicle(s) short "
+            f"(biggest shortfall {worst.shortfall_kwh:.1f} kWh, {worst.stop.vehicle_id}), "
+            "so its cost covers less energy."
+        )
+        if m_base.vehicles_ready > m_opt.vehicles_ready:
+            notes.append(
+                f"Charging on arrival gets more vehicles fully ready ({m_base.vehicles_ready} vs "
+                f"{m_opt.vehicles_ready}) by leaving others far behind; Berth keeps the biggest shortfall at "
+                f"{m_opt.worst.shortfall_kwh:.1f} kWh instead."
+            )
     if not opt.optimal:
         gap = f" (gap {opt.gap * 100:.2f}%)" if opt.gap is not None else ""
         notes.append(
