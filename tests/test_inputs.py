@@ -38,6 +38,25 @@ def test_yaml_syntax_error_has_line_number():
     assert "fleet.yaml" in str(e.value)
 
 
+def test_unquoted_clock_times_in_yaml():
+    # YAML 1.1 would read 17:30 as the number 1050; Berth keeps it as a time
+    text = textwrap.dedent("""\
+        start: 16:00
+        site:
+          power_limit_kw: 100
+          other_load_kw: [{from: 00:00, to: 16:00, kw: 5}, {from: 16:00, to: 24:00, kw: 10}]
+          chargers: [{count: 2, kw: 11}]
+        tariff: {energy_price_per_kwh: 0.2}
+        vehicles:
+          - {id: A, battery_kwh: 60, max_kw: 11, arrival: 17:30, departure: 06:00, arrival_soc_pct: 20, required_soc_pct: 80}
+        """)
+    fleet = load_fleet_text(text)
+    assert fleet.start == "16:00"
+    assert fleet.vehicles[0].arrival == "17:30"
+    assert fleet.site.other_load_kw[1].end == "24:00"
+    assert fleet.site.power_limit_kw == 100
+
+
 def test_empty_and_non_mapping_yaml():
     with pytest.raises(BerthInputError, match="empty"):
         load_fleet_text("", "f")

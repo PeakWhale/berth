@@ -99,7 +99,7 @@ vehicles:
 | `hours`, `time_limit_s` | plan length (default: until the last departure) and solver time limit (default 30 s) |
 | `shortfall_policy` | what to do when not every vehicle can be ready: `most_ready` (default) or `fair`. See "When not every vehicle can be ready" below. |
 
-**Times:** a departure earlier than the arrival means the next day. Berth rounds each arrival up and each departure down to the time step, so a vehicle only charges in steps where it is parked the whole time.
+**Times:** quotes around times are optional (`arrival: 17:30` works). A departure earlier than the arrival means the next day. Berth rounds each arrival up and each departure down to the time step, so a vehicle only charges in steps where it is parked the whole time.
 
 **Tariff in its own file:** `tariff: tariff-tou.yaml` reads the tariff from a file next to the fleet file (command line only). See `examples/tariff-tou.yaml`.
 

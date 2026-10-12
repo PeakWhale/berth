@@ -24,9 +24,36 @@ VEHICLE_NUMBERS = {"battery_kwh", "max_kw", "required_soc_pct", "arrival_soc_pct
 # YAML / JSON
 
 
+class _Loader(yaml.SafeLoader):
+    """PyYAML's safe loader, but unquoted clock times stay text.
+
+    YAML 1.1 reads `arrival: 17:30` as the base-60 number 1050 (and
+    `16:00` as 960, while `07:00` stays text). Here every HH:MM stays text."""
+
+
+_INT, _FLOAT = "tag:yaml.org,2002:int", "tag:yaml.org,2002:float"
+_Loader.yaml_implicit_resolvers = {
+    first: [(tag, rx) for tag, rx in resolvers if tag not in (_INT, _FLOAT)]
+    for first, resolvers in yaml.SafeLoader.yaml_implicit_resolvers.items()
+}
+_Loader.add_implicit_resolver(
+    _INT,
+    re.compile(r"^(?:[-+]?0b[0-1_]+|[-+]?0[0-7_]+|[-+]?(?:0|[1-9][0-9_]*)|[-+]?0x[0-9a-fA-F_]+)$"),
+    list("-+0123456789"),
+)
+_Loader.add_implicit_resolver(
+    _FLOAT,
+    re.compile(
+        r"^(?:[-+]?(?:[0-9][0-9_]*)\.[0-9_]*(?:[eE][-+][0-9]+)?|\.[0-9][0-9_]*(?:[eE][-+][0-9]+)?"
+        r"|[-+]?\.(?:inf|Inf|INF)|\.(?:nan|NaN|NAN))$"
+    ),
+    list("-+0123456789."),
+)
+
+
 def parse_yaml_text(text: str, source: str = "input") -> dict:
     try:
-        data = yaml.safe_load(text)
+        data = yaml.load(text, Loader=_Loader)  # noqa: S506 (a SafeLoader subclass)
     except yaml.YAMLError as exc:
         mark = getattr(exc, "problem_mark", None)
         problem = getattr(exc, "problem", None) or str(exc)
