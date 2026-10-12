@@ -168,7 +168,7 @@ def _build_result(prob, opt, m_opt: Metrics, base_power, m_base: Metrics, diag) 
 
     V = len(prob.vehicles)
     if m_opt.all_ready:
-        head = f"All {V} vehicles will be ready. "
+        head = "The vehicle will be ready. " if V == 1 else f"All {V} vehicles will be ready. "
     else:
         n_short = V - m_opt.vehicles_ready
         head = (
