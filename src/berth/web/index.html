@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PeakWhale Berth</title>
+  <meta name="description" content="Free EV fleet charging planner: every vehicle ready at departure, at the lowest energy and demand cost.">
+  <link rel="icon" href="/static/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="top">
+    <img src="/static/logo.svg" alt="" width="34" height="34">
+    <div class="brand">
+      <h1>PeakWhale Berth</h1>
+      <p>EV fleet charging planner</p>
+    </div>
+    <nav><a href="/docs">API docs</a></nav>
+  </header>
+
+  <main class="layout">
+    <section class="panel input" aria-labelledby="h-fleet">
+      <h2 id="h-fleet">1. Your fleet</h2>
+      <div class="row">
+        <label class="sr" for="example">Example fleet</label>
+        <select id="example"></select>
+        <button id="load-example" class="secondary" type="button">Load example</button>
+      </div>
+      <div class="row">
+        <label class="file secondary">Open YAML or JSON
+          <input type="file" id="file-fleet" accept=".yaml,.yml,.json">
+        </label>
+        <label class="file secondary">Vehicles from CSV
+          <input type="file" id="file-csv" accept=".csv,text/csv">
+        </label>
+      </div>
+      <label class="sr" for="editor">Fleet (YAML)</label>
+      <textarea id="editor" spellcheck="false" autocomplete="off"></textarea>
+      <p class="hint">
+        Edit the vehicles, chargers, site limit and tariff above. Times are HH:MM;
+        06:00 after an 18:00 arrival means the next morning. A vehicles CSV has the columns
+        <code>id, battery_kwh, max_kw, arrival, departure, arrival_soc_pct, required_soc_pct</code>.
+      </p>
+      <button id="plan" class="primary" type="button">Plan charging</button>
+      <div id="error" class="error" role="alert" hidden></div>
+    </section>
+
+    <section class="panel output" aria-labelledby="h-plan">
+      <h2 id="h-plan">2. Charging plan</h2>
+      <div id="empty" class="empty">Load an example or your own fleet, then press <b>Plan charging</b>.</div>
+      <div id="result" hidden>
+        <p id="headline" class="headline"></p>
+        <div class="cards">
+          <div class="card" id="card-ready"><span class="label">All vehicles ready</span><span class="value"></span><span class="sub"></span></div>
+          <div class="card" id="card-cost"><span class="label">Cost of this plan</span><span class="value"></span><span class="sub"></span></div>
+          <div class="card" id="card-peak"><span class="label">Peak charging power</span><span class="value"></span><span class="sub"></span></div>
+          <div class="card" id="card-energy"><span class="label">Energy from the grid</span><span class="value"></span><span class="sub"></span></div>
+        </div>
+
+        <div class="chart-box">
+          <div class="chart-head">
+            <h3>Charging power over time</h3>
+            <div class="legend" id="legend"></div>
+          </div>
+          <div id="chart" class="chart"></div>
+          <div id="tip" class="tip" hidden></div>
+        </div>
+
+        <div id="short" class="short" hidden></div>
+
+        <h3>Vehicles</h3>
+        <div class="table-wrap"><table id="vehicles"></table></div>
+
+        <details class="notes">
+          <summary>Notes and assumptions</summary>
+          <ul id="notes"></ul>
+        </details>
+
+        <div class="row downloads">
+          <button id="dl-csv" class="secondary" type="button">Download schedule CSV</button>
+          <button id="dl-json" class="secondary" type="button">Download full result (JSON)</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>PeakWhale Berth &middot; Apache License 2.0 &middot; the example fleets and tariff are made up</footer>
+  <script src="/static/app.js"></script>
+</body>
+</html>
