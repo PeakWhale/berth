@@ -39,7 +39,7 @@ class Diagnosis:
 
 def _min_total_shortfall(prob: Problem, time_limit: float, **flags) -> float | None:
     model = ChargingModel(prob, **flags)
-    r = model.m.solve({j: 1.0 for j in model.s}, time_limit=time_limit)
+    r = model.m.solve({j: 1.0 for j in model.s}, time_limit=time_limit, mip_gap=1e-3, abs_gap=0.05)
     if not r.has_solution:
         return None
     return float(sum(r.x[j] for j in model.s))
@@ -59,7 +59,7 @@ def _min_extra(
     )
     var = model.x_site if what == "site" else model.x_chg
     bounds = {j: (0.0, u + 0.005) for j, u in zip(model.s, unavoidable)}
-    r = model.m.solve({var: 1.0}, bounds=bounds, time_limit=time_limit)
+    r = model.m.solve({var: 1.0}, bounds=bounds, time_limit=time_limit, mip_gap=1e-3, abs_gap=0.5)
     if not r.has_solution:
         return None
     return float(r.x[var])
@@ -87,7 +87,7 @@ def diagnose(prob: Problem, metrics: Metrics, time_limit: float) -> Diagnosis | 
     total_short = sum(o.shortfall_kwh for o in metrics.stops)
     total_unavoidable = sum(unavoidable)
     avoidable = sum(max(0.0, o.shortfall_kwh - d.unavoidable_kwh[(o.stop.vehicle_id, o.stop.number)]) for o in short)
-    budget = max(2.0, time_limit / 4)
+    budget = min(5.0, max(2.0, time_limit / 4))  # per "what if" solve; these only need rough answers
     if avoidable > READY_TOL_KWH:
         w_site = _min_total_shortfall(prob, budget, site_limit=False)
         w_chg = _min_total_shortfall(prob, budget, charger_limit=False)
