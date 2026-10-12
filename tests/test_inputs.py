@@ -183,6 +183,37 @@ def test_wrapping_periods_and_single_vs_stops_form():
         parse_fleet(both)
 
 
+def test_yaml_alias_bomb_is_refused_quickly():
+    import time
+
+    # 16 KB of YAML that stands for 2000 vehicles with 2000 stops each
+    n = 2000
+    stops = '[&s {arrival: "00:00", departure: "01:00", required_soc_pct: 0}' + ", *s" * (n - 1) + "]"
+    vehicles = "[&v {id: a, battery_kwh: 60, max_kw: 11, arrival_soc_pct: 10, stops: " + stops + "}" + ", *v" * (n - 1) + "]"
+    text = "site: {power_limit_kw: 10, chargers: [{count: 1, kw: 7}]}\ntariff: {energy_price_per_kwh: 0.1}\nvehicles: " + vehicles
+    started = time.perf_counter()
+    with pytest.raises(BerthInputError, match="aliases"):
+        load_fleet_text(text)
+    assert time.perf_counter() - started < 2
+
+
+def test_yaml_aliases_still_work_for_normal_files():
+    text = textwrap.dedent("""\
+        site: {power_limit_kw: 50, chargers: [{count: 2, kw: 11}]}
+        tariff: {energy_price_per_kwh: 0.2}
+        vehicles:
+          - &van {id: A, battery_kwh: 60, max_kw: 11, arrival: "18:00", departure: "06:00", arrival_soc_pct: 20, required_soc_pct: 80}
+          - {<<: *van, id: B}
+        """)
+    assert [v.id for v in load_fleet_text(text).vehicles] == ["A", "B"]
+
+
+def test_fleet_size_limits():
+    fleet = make_fleet([van(i) for i in range(2001)])
+    with pytest.raises(BerthInputError, match="at most 2000"):
+        parse_fleet(fleet)
+
+
 def test_file_references_only_on_the_command_line(tmp_path):
     text = "name: x\ntariff: /etc/passwd\nsite: {power_limit_kw: 10, chargers: [{count: 1, kw: 7}]}\nvehicles: []\n"
     with pytest.raises(BerthInputError, match="file name"):

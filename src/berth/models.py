@@ -23,6 +23,12 @@ from pydantic import (
 
 from berth.timeutil import MINUTES_PER_DAY, check_time, clock_label, parse_clock
 
+# Size limits: far above real depots, low enough that one request cannot
+# tie up the server.
+MAX_VEHICLES = 2000
+MAX_STOPS = 100  # per vehicle
+MAX_CHARGER_GROUPS = 100
+
 PROFILE_HELP = (
     "must be a number, a list of 24 hourly values (starting at 00:00), "
     "or a list of periods like {from: '07:00', to: '16:00', value: 0.20}"
@@ -206,7 +212,9 @@ class Site(BaseModel):
         description="Other building load (lights, workshop, offices), kW. Charging can only use "
         "power_limit_kw minus this. A number, or a value by time of day.",
     )
-    chargers: list[ChargerGroup] = Field(min_length=1, description="Charger groups at the site.")
+    chargers: list[ChargerGroup] = Field(
+        min_length=1, max_length=MAX_CHARGER_GROUPS, description="Charger groups at the site."
+    )
     charging_efficiency: float = Field(
         1.0,
         gt=0.5,
@@ -294,7 +302,9 @@ class Vehicle(BaseModel):
         None, ge=0, le=100, description="Battery level needed at departure, percent (single-stop form)."
     )
     stops: list[Stop] | None = Field(
-        None, description="Several stops in one plan, for example a midday break and the night."
+        None,
+        max_length=MAX_STOPS,
+        description="Several stops in one plan, for example a midday break and the night.",
     )
 
     @field_validator("id", mode="before")
@@ -363,7 +373,7 @@ class Fleet(BaseModel):
     )
     site: Site
     tariff: Tariff
-    vehicles: list[Vehicle] = Field(min_length=1)
+    vehicles: list[Vehicle] = Field(min_length=1, max_length=MAX_VEHICLES)
 
     @field_validator("step_minutes")
     @classmethod

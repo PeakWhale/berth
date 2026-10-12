@@ -51,6 +51,26 @@ _Loader.add_implicit_resolver(
 )
 
 
+# YAML anchors and aliases (&name, *name) let a small text stand for a huge
+# fleet. Count the values as they will be checked, repeats included.
+MAX_YAML_VALUES = 1_000_000
+
+
+def _too_many_values(data: Any, limit: int = MAX_YAML_VALUES) -> bool:
+    stack = [data]
+    count = 0
+    while stack:
+        item = stack.pop()
+        count += 1
+        if count > limit:
+            return True
+        if isinstance(item, dict):
+            stack.extend(item.values())
+        elif isinstance(item, list):
+            stack.extend(item)
+    return False
+
+
 def parse_yaml_text(text: str, source: str = "input") -> dict:
     try:
         data = yaml.load(text, Loader=_Loader)  # noqa: S506 (a SafeLoader subclass)
@@ -63,6 +83,10 @@ def parse_yaml_text(text: str, source: str = "input") -> dict:
         raise BerthInputError("the file is empty", source)
     if not isinstance(data, dict):
         raise BerthInputError("the top level must be a mapping with keys like site, tariff and vehicles", source)
+    if _too_many_values(data):
+        raise BerthInputError(
+            f"the fleet has more than {MAX_YAML_VALUES:,} values once YAML aliases (*name) are filled in", source
+        )
     return data
 
 
