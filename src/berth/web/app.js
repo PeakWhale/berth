@@ -158,7 +158,15 @@ function render(r) {
 function renderShort(r) {
   const box = $("short");
   if (!r.shortfalls.length) { box.hidden = true; return; }
-  let html = "<h3>Vehicles that fall short</h3><ul>";
+  const o = r.optimized, b = r.baseline;
+  const policy = r.shortfall_policy === "fair"
+    ? `Policy <b>fair</b>: the shortfall is shared. Biggest shortfall ${o.max_shortfall_kwh.toFixed(1)} kWh `
+      + `(charging on arrival: ${b.max_shortfall_kwh.toFixed(1)} kWh). Set <code>shortfall_policy: most_ready</code> `
+      + "to get the most vehicles fully ready."
+    : `Policy <b>most_ready</b>: ${o.vehicles_ready} of ${o.vehicles_total} vehicles fully ready `
+      + `(charging on arrival: ${b.vehicles_ready}), then the shortfall of the others is kept as small as possible. `
+      + "Set <code>shortfall_policy: fair</code> to share the shortfall instead.";
+  let html = `<h3>Vehicles that fall short</h3><p class="policy">${policy}</p><ul>`;
   for (const item of r.shortfalls) {
     html += `<li><b>${esc(item.vehicle_id)}</b> (leaves ${esc(item.departure)}): ${item.shortfall_kwh.toFixed(1)} kWh short`;
     if (item.reasons.length) html += "<ul>" + item.reasons.map((x) => `<li>${esc(x)}</li>`).join("") + "</ul>";
