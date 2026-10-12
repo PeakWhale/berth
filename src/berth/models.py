@@ -7,6 +7,7 @@ the MCP server.
 from __future__ import annotations
 
 import math
+import re
 from typing import Annotated, Literal, Union
 
 from pydantic import (
@@ -234,7 +235,9 @@ class Tariff(BaseModel):
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
 
     name: str = Field("Tariff", description="A name for this tariff.")
-    currency: str = Field("USD", description="Currency code, only used for display.")
+    currency: str = Field(
+        "USD", description="Three-letter currency code (like USD, EUR or INR), only used for display."
+    )
     energy_price_per_kwh: Profile = Field(
         description="Energy price per kWh. A number, 24 hourly values, or periods by time of day."
     )
@@ -250,6 +253,14 @@ class Tariff(BaseModel):
         description="Days in a billing month. A one-day plan carries 1/billing_days of the monthly "
         "demand charge (as if every day has the same peak). Use 1 to count the full monthly charge.",
     )
+
+    @field_validator("currency")
+    @classmethod
+    def _currency_code(cls, v: str) -> str:
+        code = v.strip().upper()
+        if not re.fullmatch(r"[A-Z]{3}", code):
+            raise ValueError("must be a three-letter currency code, like USD or EUR")
+        return code
 
 
 class Stop(BaseModel):

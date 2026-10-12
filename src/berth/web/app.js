@@ -41,12 +41,15 @@ function saved() {
 
 // ---- formatting ------------------------------------------------------------
 
+// Returns HTML-safe text: the currency comes from the fleet, which may be shared.
 function money(x, currency) {
+  let text;
   try {
-    return new Intl.NumberFormat(undefined, { style: "currency", currency, maximumFractionDigits: 2 }).format(x);
+    text = new Intl.NumberFormat(undefined, { style: "currency", currency, maximumFractionDigits: 2 }).format(x);
   } catch (_) {
-    return `${x.toFixed(2)} ${currency}`;
+    text = `${x.toFixed(2)} ${currency}`;
   }
+  return esc(text);
 }
 const kw = (x) => `${Math.round(x).toLocaleString()} kW`;
 const kwh = (x) => `${Math.round(x).toLocaleString()} kWh`;

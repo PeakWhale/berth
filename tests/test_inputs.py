@@ -98,6 +98,15 @@ def test_shortfall_policy_values():
     assert "shortfall_policy: Input should be 'most_ready' or 'fair'" in problems_of(e)
 
 
+def test_currency_must_be_a_three_letter_code():
+    fleet = make_fleet([van(1)])
+    fleet["tariff"]["currency"] = " eur "
+    assert parse_fleet(fleet).tariff.currency == "EUR"
+    fleet["tariff"]["currency"] = "<img src=x onerror=alert(1)>"
+    with pytest.raises(BerthInputError, match="three-letter currency code"):
+        parse_fleet(fleet)
+
+
 def test_duplicate_vehicle_ids():
     with pytest.raises(BerthInputError, match="unique"):
         parse_fleet(make_fleet([van(1), van(1)]))
