@@ -170,13 +170,13 @@ uv run python scripts/example_results.py
 | Example | Vehicles | Chargers | Ready (Berth / on arrival) | Cost (Berth / on arrival) | Saving | Peak charging kW (Berth / on arrival) | Biggest shortfall kWh (Berth / on arrival) | Solve time |
 |---|---|---|---|---|---|---|---|---|
 | delivery-vans | 12 | 12 x 19.2 kW | 12 / 12 | $107.97 / $240.43 | $132.46 (55.1%) | 73 / 138 | 0.0 / 0.0 | 0.0 s |
-| late-shift-infeasible | 11 | 4 x 22 kW | 9 / 8 | $94.28 / $90.62 | -$3.66 (-4.0%) | 55 / 55 | 57.0 / 67.5 | 2.7 s |
-| late-shift-infeasible (shortfall_policy: fair) | 11 | 4 x 22 kW | 5 / 8 | $94.28 / $90.62 | -$3.66 (-4.0%) | 55 / 55 | 43.8 / 67.5 | 0.8 s |
-| school-buses | 30 | 4 x 60 kW + 20 x 19.2 kW | 30 / 30 | $824.86 / $1,262.64 | $437.78 (34.7%) | 380 / 380 | 0.0 / 0.0 | 7.5 s |
+| late-shift-infeasible | 11 | 4 x 22 kW | 9 / 8 | $94.28 / $90.62 | -$3.66 (-4.0%) | 55 / 55 | 57.0 / 67.5 | 2.3 s |
+| late-shift-infeasible (shortfall_policy: fair) | 11 | 4 x 22 kW | 5 / 8 | $94.28 / $90.62 | -$3.66 (-4.0%) | 55 / 55 | 43.8 / 67.5 | 0.7 s |
+| school-buses | 30 | 4 x 60 kW + 20 x 19.2 kW | 30 / 30 | $824.86 / $1,262.64 | $437.78 (34.7%) | 380 / 380 | 0.0 / 0.0 | 5.4 s |
 
 * **Delivery vans:** charging moves out of the 16:00–21:00 price peak into the night, and the peak charging power is about half, so the demand charge is lower too.
 * **School buses:** 24 chargers for 30 buses, with a midday break and the night. Both plans reach the site limit at some point, so here the saving comes from the energy price: charging moves out of the evening peak.
-* **Late shift (cannot be fully charged):** 11 vans, 4 chargers and a small site connection. With the default `most_ready` policy, Berth gets 9 vans fully ready, one more than charging on arrival (8). Only EARLY-5 (19.9 kWh short) and SHORT-STOP (57.0 kWh short) fall short, and even the biggest shortfall is smaller than with charging on arrival (67.5 kWh). With `shortfall_policy: fair`, Berth shares the avoidable shortfall instead: the biggest shortfall drops to 43.8 kWh, but only 5 vans are fully ready (every EARLY van is 6.6 kWh short). In both cases Berth delivers more energy than charging on arrival (500.0 vs 480.7 kWh), which is why its cost is a little higher. It also reports that SHORT-STOP is not parked long enough to be ready, and that about 8 kW more site capacity would be enough for every other van.
+* **Late shift (cannot be fully charged):** 11 vans, 4 chargers and a small site connection. With the default `most_ready` policy, Berth gets 9 vans fully ready, one more than charging on arrival (8). Only EARLY-5 (19.9 kWh short) and SHORT-STOP (57.0 kWh short) fall short, and even the biggest shortfall is smaller than with charging on arrival (67.5 kWh). With `shortfall_policy: fair`, Berth shares the avoidable shortfall instead: the biggest shortfall drops to 43.8 kWh (SHORT-STOP, which could never get 37.1 kWh of it), but only 5 vans are fully ready (every EARLY van is 6.6 kWh short). In both cases Berth delivers more energy than charging on arrival (500.0 vs 480.7 kWh), which is why its cost is a little higher. It also reports that SHORT-STOP is not parked long enough to be ready, and that about 8 kW more site capacity would be enough for every other van.
 
 ## Web page
 
