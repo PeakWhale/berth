@@ -137,6 +137,12 @@ def diagnose(prob: Problem, metrics: Metrics, deadline: float) -> Diagnosis | No
                 d.binding.append(CHARGERS)
             site_fixes = w_site <= total_unavoidable + READY_TOL_KWH
             chg_fixes = w_chg <= total_unavoidable + READY_TOL_KWH
+            # a limit whose removal gets everyone ready holds charging back,
+            # even when the shortfall is too small to beat the margin above
+            if site_fixes and SITE not in d.binding:
+                d.binding.append(SITE)
+            if chg_fixes and CHARGERS not in d.binding:
+                d.binding.append(CHARGERS)
             if not (site_fixes or chg_fixes):
                 d.both_needed = True
                 d.binding = [SITE, CHARGERS]

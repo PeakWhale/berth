@@ -67,6 +67,17 @@ def test_site_limit_is_reported_and_extra_kw_fixes_it():
     assert plan(bigger).all_ready
 
 
+@pytest.mark.parametrize("limit_kw", [4.66, 4.664])
+def test_small_shortfall_still_gets_a_reason(limit_kw):
+    # the van needs 56 kWh in 12 h (4.667 kW); the site is a hair too small
+    fleet = make_fleet([van(1)], power_limit_kw=limit_kw)
+    r = plan(fleet)
+    (item,) = r.shortfalls
+    assert 0.01 < item.shortfall_kwh < 0.1
+    assert item.reason_codes == [SITE]
+    assert r.diagnosis.binding_limits == [SITE]
+
+
 def test_too_few_chargers_is_reported_and_extra_chargers_fix_it():
     # 4 vans need 56 kWh each at 11 kW = 5.1 h of charger time; 12 h x 1 charger is not enough
     fleet = make_fleet([van(i) for i in range(4)], power_limit_kw=500, chargers=[{"count": 1, "kw": 11}])
